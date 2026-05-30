@@ -1,0 +1,11 @@
+# 로봇 시뮬레이터 (simul.py) 의존성
+matplotlib>=3.5.0
+numpy>=1.21.0
+
+# Flask 서버 (server.py) 의존성  
+flask>=2.0.0
+flask-cors>=3.0.0
+requests>=2.25.0
+
+# OpenCV 의존성 (Code 폴더 내 파일들)
+opencv-python>=4.5.0

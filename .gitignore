@@ -1,0 +1,29 @@
+.DS_Store
+
+# Python
+.venv/
+facemove/
+__pycache__/
+*.py[cod]
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+
+# Logs
+*.log
+
+# Google Drive shortcut files
+*.gdoc
+report/
+
+# Android / Gradle generated files
+app_android/.gradle/
+app_android/build/
+app_android/app/build/
+app_android/local.properties
+app_android/.idea/workspace.xml
+app_android/.idea/caches/
+
+modeling/CAD Files
