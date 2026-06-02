@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4-DOF 아크릴 로봇 암 시뮬레이터</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { min-height: 100vh; background: #d8dde5; color: #1f2933; padding: 18px; }
+  .wrap {
+    max-width: 1040px;
+    margin: 0 auto;
+    background: #eef1f5;
+    border: 1px solid #c3cad4;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 20px 44px rgba(32,42,56,0.18);
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid #c3cad4;
+  }
+  h1 { font-size: 15px; font-weight: 600; color: #26313f; }
+  .editor { display: flex; flex-direction: column; }
+  .viewport { min-width: 0; background: #cfd6df; }
+  .canvas-wrap {
+    position: relative;
+    width: 100%;
+    min-height: 560px;
+    background: radial-gradient(circle at 50% 35%, #f2f5f8 0, #dce3eb 58%, #cdd6e0 100%);
+    overflow: hidden;
+  }
+  .canvas-wrap::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(82, 100, 124, 0.12) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(82, 100, 124, 0.12) 1px, transparent 1px);
+    background-size: 56px 56px;
+    pointer-events: none;
+  }
+  canvas { width: 100%; height: 560px; display: block; position: relative; z-index: 1; }
+  .details {
+    background: #f5f7fa;
+    border-top: 1px solid #c3cad4;
+  }
+  .panel-title { display: none; }
+  .controls {
+    padding: 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 210px;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .control-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    gap: 9px 12px;
+    align-content: start;
+    padding: 11px;
+    background: #ffffff;
+    border: 1px solid #d9dee7;
+    border-radius: 8px;
+  }
+  .control-group.actions {
+    grid-template-columns: 1fr;
+  }
+  .group-title {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 18px;
+    color: #26313f;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .group-subtitle {
+    color: #7a8797;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 44px;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+  .lbl { grid-column: 1 / -1; font-size: 11px; color: #526070; }
+  input[type=range] { width: 100%; min-width: 0; accent-color: #43a2ff; }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: #2563eb; }
+  .val {
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 44px;
+    text-align: right;
+    color: #26313f;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .btns { display: grid; grid-template-columns: 1fr; gap: 8px; align-items: center; }
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 30px;
+    font-size: 12px;
+    color: #526070;
+  }
+  button {
+    min-height: 32px;
+    padding: 7px 11px;
+    font-size: 12px;
+    color: #26313f;
+    border: 1px solid #b7c0cc;
+    background: #ffffff;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  button:hover { background: #e8edf3; }
+  button.active { color: #ffffff; border-color: #2563eb; background: #2563eb; }
+  .ee {
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #2563eb;
+    margin-left: auto;
+  }
+  .hint { font-size: 11px; color: #667486; line-height: 1.45; }
+  .statusbar {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 12px;
+    border-top: 1px solid #c3cad4;
+    color: #667486;
+    font-size: 11px;
+  }
+  @media (max-width: 860px) {
+    body { padding: 10px; }
+    .controls { grid-template-columns: 1fr; }
+    .control-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .control-group.actions { grid-template-columns: 1fr; }
+    canvas { height: 460px; }
+    .canvas-wrap { min-height: 460px; }
+  }
+  @media (max-width: 560px) {
+    .controls, .control-group { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>4-DOF Face Tracking Rig</h1>
+    <span class="ee" id="eePos">—</span>
+  </div>
+  <div class="editor">
+    <main class="viewport">
+      <div class="canvas-wrap">
+        <canvas id="c"></canvas>
+      </div>
+      <div class="statusbar">
+        <span>드래그: 시점 회전</span>
+        <span>스크롤: 줌</span>
+      </div>
+    </main>
+    <aside class="details">
+      <div class="panel-title">Details · Joint Controls</div>
+      <div class="controls">
+        <section class="control-group">
+          <div class="group-title">Robot <span class="group-subtitle">motors</span></div>
+          <div class="row">
+            <span class="lbl">J1 베이스</span>
+            <input type="range" id="j1" min="-170" max="170" value="0" step="1">
+            <span id="j1v" class="val">0°</span>
+          </div>
+          <div class="row">
+            <span class="lbl">J2 lift</span>
+            <input type="range" id="j2" min="-30" max="80" value="25" step="1">
+            <span id="j2v" class="val">25°</span>
+          </div>
+          <div class="row">
+            <span class="lbl">J3 crank</span>
+            <input type="range" id="j3" min="220" max="350" value="260" step="1">
+            <span id="j3v" class="val">260°</span>
+          </div>
+          <div class="row">
+            <span class="lbl">J4 폰 방향</span>
+            <input type="range" id="j4" min="-90" max="90" value="0" step="1">
+            <span id="j4v" class="val">0°</span>
+          </div>
+          <div class="row">
+            <span class="lbl">폰 틸트</span>
+            <input type="range" id="jg" min="-35" max="35" value="0" step="1">
+            <span id="jgv" class="val">0°</span>
+          </div>
+        </section>
+        <section class="control-group">
+          <div class="group-title">Person <span class="group-subtitle">target</span></div>
+          <label class="toggle-row">
+            <input type="checkbox" id="faceOn" checked>
+            <span>사람 표시</span>
+          </label>
+          <div class="row">
+            <span class="lbl">사람 X</span>
+            <input type="range" id="faceX" min="-2.4" max="2.4" value="-1.45" step="0.01">
+            <span id="faceXv" class="val">-1.45</span>
+          </div>
+          <div class="row">
+            <span class="lbl">사람 높이</span>
+            <input type="range" id="faceY" min="0.0" max="1.0" value="0.28" step="0.01">
+            <span id="faceYv" class="val">0.28</span>
+          </div>
+          <div class="row">
+            <span class="lbl">사람 거리</span>
+            <input type="range" id="faceZ" min="-2.0" max="2.0" value="0.52" step="0.01">
+            <span id="faceZv" class="val">0.52</span>
+          </div>
+          <div class="row">
+            <span class="lbl">사람 방향</span>
+            <input type="range" id="faceYaw" min="-180" max="180" value="60" step="1">
+            <span id="faceYawv" class="val">60°</span>
+          </div>
+          <div class="row">
+            <span class="lbl">고개 기울기</span>
+            <input type="range" id="faceRoll" min="-45" max="45" value="0" step="1">
+            <span id="faceRollv" class="val">0°</span>
+          </div>
+        </section>
+        <section class="control-group actions">
+          <div class="group-title">Run <span class="group-subtitle">modes</span></div>
+          <div class="btns">
+            <button id="btnBoot">휴대폰 부팅</button>
+            <button id="btnFaceTrack">얼굴 추적 OFF</button>
+            <button id="btnPersonOrbit">사람 궤도 데모 ▶</button>
+            <button id="btnReset">리셋</button>
+            <button id="btnAnim">자동 데모 ▶</button>
+          </div>
+          <p class="hint">추적 모드에서는 모터값이 목표 방향으로 천천히 이동합니다.</p>
+        </section>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const canvas = document.getElementById('c');
+const W = canvas.parentElement.clientWidth || 900, H = canvas.clientHeight || 560;
+canvas.width = W * devicePixelRatio;
+canvas.height = H * devicePixelRatio;
+canvas.style.width = W + 'px';
+canvas.style.height = H + 'px';
+
+const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(W, H);
+renderer.setClearColor(0x000000, 0);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, W / H, 0.01, 100);
+
+scene.fog = new THREE.Fog(0xdce3eb, 5.0, 10.0);
+scene.add(new THREE.AmbientLight(0xffffff, 0.38));
+const sun = new THREE.DirectionalLight(0xffffff, 0.98);
+sun.position.set(5, 9, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xdcecff, 0xaab3bf, 0.34));
+
+const matAcrylic = new THREE.MeshStandardMaterial({ color: 0x6f7a86, roughness: 0.42, metalness: 0.02 });
+const matServo = new THREE.MeshStandardMaterial({ color: 0x2080c4, roughness: 0.35, metalness: 0.15 });
+const matPivot = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.3, metalness: 0.6 });
+const matFloor = new THREE.MeshStandardMaterial({ color: 0xe4e8ee, roughness: 0.92 });
+const matPhone = new THREE.MeshStandardMaterial({ color: 0x1f2329, roughness: 0.28, metalness: 0.45 });
+const matPhoneBack = new THREE.MeshStandardMaterial({ color: 0xd7d9dd, roughness: 0.32, metalness: 0.2 });
+const matScreen = new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.08, metalness: 0.18 });
+const matGlass = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.06, metalness: 0.05 });
+const matBootScreen = new THREE.MeshStandardMaterial({ color: 0x05070a, emissive: 0x05070a, emissiveIntensity: 0.25, roughness: 0.08, metalness: 0.08 });
+const matHomeScreen = new THREE.MeshStandardMaterial({ color: 0x2563eb, emissive: 0x1d4ed8, emissiveIntensity: 0.42, roughness: 0.12, metalness: 0.02 });
+const matBootGlow = new THREE.MeshStandardMaterial({ color: 0x93c5fd, emissive: 0x2563eb, emissiveIntensity: 0.75, transparent: true, opacity: 0.82, roughness: 0.08, metalness: 0.02 });
+const matLogo = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.35, roughness: 0.25, metalness: 0.0 });
+const matIconA = new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x15803d, emissiveIntensity: 0.25, roughness: 0.18, metalness: 0.0 });
+const matIconB = new THREE.MeshStandardMaterial({ color: 0xf97316, emissive: 0xc2410c, emissiveIntensity: 0.2, roughness: 0.18, metalness: 0.0 });
+const matIconC = new THREE.MeshStandardMaterial({ color: 0xa855f7, emissive: 0x7e22ce, emissiveIntensity: 0.25, roughness: 0.18, metalness: 0.0 });
+const matCameraBump = new THREE.MeshStandardMaterial({ color: 0xc5c9cf, roughness: 0.3, metalness: 0.25 });
+const matLens = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.12, metalness: 0.5 });
+const matSkin = new THREE.MeshStandardMaterial({ color: 0xf0c7a8, roughness: 0.48, metalness: 0.0 });
+const matHair = new THREE.MeshStandardMaterial({ color: 0x2b1f1a, roughness: 0.55, metalness: 0.0 });
+const matFaceMark = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.35, metalness: 0.0 });
+const matDetect = new THREE.LineBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.82 });
+const matEdge = new THREE.LineBasicMaterial({ color: 0x26313f, transparent: true, opacity: 0.45 });
+
+const deg = d => d * Math.PI / 180;
+const radToDeg = r => r * 180 / Math.PI;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function box(w, h, d, mat) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.castShadow = true; m.receiveShadow = true;
+  const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), matEdge);
+  m.add(e);
+  return m;
+}
+function cyl(r, h, mat, seg) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg || 14), mat);
+  m.castShadow = true;
+  const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), matEdge);
+  m.add(e);
+  return m;
+}
+function sphere(r, mat, seg) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, seg || 24, seg || 24), mat);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), matFloor);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.25;
+floor.receiveShadow = true;
+scene.add(floor);
+const grid = new THREE.GridHelper(20, 40, 0x8190a2, 0xb7c0cb);
+grid.position.y = -0.248;
+scene.add(grid);
+
+const basePlate = box(1.6, 0.04, 1.3, matAcrylic);
+basePlate.position.y = 0.02;
+scene.add(basePlate);
+
+const faceTarget = new THREE.Group();
+faceTarget.position.set(-1.45, 0.28, 0.52);
+faceTarget.rotation.y = deg(60);
+scene.add(faceTarget);
+const shoulders = box(0.34, 0.08, 0.18, matAcrylic);
+shoulders.position.set(0, -0.05, 0);
+faceTarget.add(shoulders);
+const neck = cyl(0.045, 0.12, matSkin, 18);
+neck.position.set(0, 0.04, 0);
+faceTarget.add(neck);
+const faceHead = new THREE.Group();
+faceTarget.add(faceHead);
+const head = sphere(0.14, matSkin, 28);
+head.position.set(0, 0.19, 0);
+faceHead.add(head);
+const hair = sphere(0.145, matHair, 28);
+hair.scale.set(1.0, 0.58, 0.86);
+hair.position.set(0, 0.27, -0.015);
+faceHead.add(hair);
+[[-0.045, 0.205], [0.045, 0.205]].forEach(p => {
+  const eye = sphere(0.012, matFaceMark, 12);
+  eye.position.set(p[0], p[1], 0.128);
+  faceHead.add(eye);
+});
+const nose = cyl(0.008, 0.035, matSkin, 12);
+nose.rotation.x = Math.PI / 2;
+nose.position.set(0, 0.175, 0.145);
+faceHead.add(nose);
+const mouth = box(0.055, 0.006, 0.006, matFaceMark);
+mouth.position.set(0, 0.13, 0.132);
+faceHead.add(mouth);
+const detectFrame = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(0.36, 0.36, 0.01)),
+  matDetect
+);
+detectFrame.position.set(0, 0.18, 0.17);
+faceHead.add(detectFrame);
+
+[[-0.65, -0.5], [0.65, -0.5], [-0.65, 0.5], [0.65, 0.5]].forEach(p => {
+  const f = cyl(0.04, 0.14, matAcrylic, 10);
+  f.position.set(p[0], -0.07, p[1]); scene.add(f);
+  const ft = cyl(0.055, 0.025, matAcrylic, 12);
+  ft.position.set(p[0], -0.16, p[1]); scene.add(ft);
+});
+
+const j1Motor = box(0.27, 0.14, 0.27, matServo);
+j1Motor.position.y = 0.05;
+scene.add(j1Motor);
+
+const g_j1 = new THREE.Group();
+g_j1.position.set(0, 0.12, 0);
+scene.add(g_j1);
+
+const turntable = cyl(0.16, 0.04, matAcrylic, 24);
+turntable.position.y = 0.02;
+g_j1.add(turntable);
+
+const bbY = 0.04, bh = 0.36, bWidth = 0.42, bDepth = 0.4, pT = 0.025;
+
+const lp = box(pT, bh, bDepth, matAcrylic);
+lp.position.set(-bWidth / 2 - pT / 2, bbY + bh / 2, 0);
+g_j1.add(lp);
+const rp = box(pT, bh, bDepth, matAcrylic);
+rp.position.set(bWidth / 2 + pT / 2, bbY + bh / 2, 0);
+g_j1.add(rp);
+const xp1 = box(bWidth + 0.04, 0.035, 0.1, matAcrylic);
+xp1.position.set(0, bbY + 0.04, 0.14);
+g_j1.add(xp1);
+const xp2 = box(bWidth + 0.04, 0.035, 0.1, matAcrylic);
+xp2.position.set(0, bbY + 0.04, -0.14);
+g_j1.add(xp2);
+
+const S_y = bbY + bh - 0.04, S_z = 0.10;
+const R_y = bbY + bh - 0.04, R_z = -0.10;
+
+const j2Motor = box(0.10, 0.16, 0.16, matServo);
+j2Motor.position.set(-bWidth / 2 - 0.06, S_y, S_z);
+g_j1.add(j2Motor);
+const j3Motor = box(0.10, 0.16, 0.16, matServo);
+j3Motor.position.set(bWidth / 2 + 0.06, R_y, R_z);
+g_j1.add(j3Motor);
+
+const sPin = cyl(0.022, bWidth + 0.07, matPivot, 12);
+sPin.rotation.z = Math.PI / 2;
+sPin.position.set(0, S_y, S_z);
+g_j1.add(sPin);
+const rPin = cyl(0.022, bWidth + 0.07, matPivot, 12);
+rPin.rotation.z = Math.PI / 2;
+rPin.position.set(0, R_y, R_z);
+g_j1.add(rPin);
+
+const L_arm = 0.45, aT = 0.022, aW = 0.07, aSp = 0.07;
+
+const g_upperArm = new THREE.Group();
+g_upperArm.position.set(0, S_y, S_z);
+g_j1.add(g_upperArm);
+
+const uaL = box(aT, L_arm, aW, matAcrylic);
+uaL.position.set(-aSp / 2 - aT / 2, L_arm / 2, 0); g_upperArm.add(uaL);
+const uaR = box(aT, L_arm, aW, matAcrylic);
+uaR.position.set(aSp / 2 + aT / 2, L_arm / 2, 0); g_upperArm.add(uaR);
+const uaTop = box(aSp + 0.06, 0.03, 0.055, matAcrylic);
+uaTop.position.set(0, L_arm - 0.015, 0); g_upperArm.add(uaTop);
+const uaBot = box(aSp + 0.06, 0.03, 0.055, matAcrylic);
+uaBot.position.set(0, 0.025, 0); g_upperArm.add(uaBot);
+const ePin = cyl(0.020, aSp + 0.08, matPivot, 12);
+ePin.rotation.z = Math.PI / 2;
+ePin.position.set(0, L_arm, 0); g_upperArm.add(ePin);
+
+const L_j3Crank = 0.20, L_j3Rod = 0.42;
+const g_j3Crank = new THREE.Group();
+g_j3Crank.position.set(0, R_y, R_z);
+g_j1.add(g_j3Crank);
+const j3Crank = box(0.034, L_j3Crank, 0.045, matAcrylic);
+j3Crank.position.y = L_j3Crank / 2;
+g_j3Crank.add(j3Crank);
+const j3CrankPin = cyl(0.018, 0.12, matPivot, 12);
+j3CrankPin.rotation.z = Math.PI / 2;
+j3CrankPin.position.y = L_j3Crank;
+g_j3Crank.add(j3CrankPin);
+
+const g_j3Rod = new THREE.Group();
+g_j1.add(g_j3Rod);
+const j3Rod = box(0.024, L_j3Rod, 0.04, matAcrylic);
+g_j3Rod.add(j3Rod);
+const j3RodPinA = cyl(0.016, 0.11, matPivot, 12);
+j3RodPinA.rotation.z = Math.PI / 2;
+j3RodPinA.position.y = -L_j3Rod / 2;
+g_j3Rod.add(j3RodPinA);
+const j3RodPinB = cyl(0.016, 0.11, matPivot, 12);
+j3RodPinB.rotation.z = Math.PI / 2;
+j3RodPinB.position.y = L_j3Rod / 2;
+g_j3Rod.add(j3RodPinB);
+
+const L_fa = 0.5, fT = 0.022, fW = 0.06, fSp = 0.07;
+const g_forearm = new THREE.Group();
+g_j1.add(g_forearm);
+
+const faL = box(fT, L_fa, fW, matAcrylic);
+faL.position.set(-fSp / 2 - fT / 2, L_fa / 2, 0); g_forearm.add(faL);
+const faR2 = box(fT, L_fa, fW, matAcrylic);
+faR2.position.set(fSp / 2 + fT / 2, L_fa / 2, 0); g_forearm.add(faR2);
+const faTop = box(fSp + 0.05, 0.025, 0.05, matAcrylic);
+faTop.position.set(0, L_fa - 0.012, 0); g_forearm.add(faTop);
+const faBot = box(fSp + 0.05, 0.025, 0.05, matAcrylic);
+faBot.position.set(0, 0.012, 0); g_forearm.add(faBot);
+const j3Coupler = box(fSp + 0.07, 0.38, 0.045, matAcrylic);
+j3Coupler.position.set(0, -0.19, 0);
+g_forearm.add(j3Coupler);
+const j3CouplerPin = cyl(0.018, fSp + 0.10, matPivot, 12);
+j3CouplerPin.rotation.z = Math.PI / 2;
+j3CouplerPin.position.set(0, -0.38, 0);
+g_forearm.add(j3CouplerPin);
+
+const g_wrist = new THREE.Group();
+g_wrist.position.set(0, L_fa, 0);
+g_forearm.add(g_wrist);
+
+const j4Motor = box(0.10, 0.085, 0.11, matServo);
+j4Motor.position.set(0, 0.04, 0); g_wrist.add(j4Motor);
+
+const g_phone = new THREE.Group();
+g_phone.position.set(0, 0.075, 0);
+g_wrist.add(g_phone);
+
+const phoneMount = box(0.12, 0.018, 0.085, matAcrylic);
+phoneMount.position.set(0, 0.02, 0);
+g_phone.add(phoneMount);
+const phoneBackClamp = box(0.05, 0.035, 0.10, matAcrylic);
+phoneBackClamp.position.set(0, 0.045, 0);
+g_phone.add(phoneBackClamp);
+const phoneBody = box(0.225, 0.026, 0.345, matPhone);
+phoneBody.position.set(0, 0.072, 0);
+g_phone.add(phoneBody);
+const phoneBack = box(0.205, 0.004, 0.325, matPhoneBack);
+phoneBack.position.set(0, 0.057, 0);
+g_phone.add(phoneBack);
+const phoneScreen = box(0.205, 0.006, 0.322, matScreen);
+phoneScreen.position.set(0, 0.088, 0);
+g_phone.add(phoneScreen);
+const screenGlow = box(0.17, 0.002, 0.26, matGlass);
+screenGlow.position.set(0, 0.092, -0.005);
+g_phone.add(screenGlow);
+const dynamicIsland = box(0.065, 0.004, 0.014, matLens);
+dynamicIsland.position.set(0, 0.096, 0.135);
+g_phone.add(dynamicIsland);
+const earpiece = box(0.032, 0.004, 0.004, matPivot);
+earpiece.position.set(0, 0.099, 0.151);
+g_phone.add(earpiece);
+const sideBtnL = box(0.006, 0.012, 0.055, matPhone);
+sideBtnL.position.set(-0.116, 0.072, 0.035);
+g_phone.add(sideBtnL);
+const sideBtnR = box(0.006, 0.012, 0.07, matPhone);
+sideBtnR.position.set(0.116, 0.072, 0.02);
+g_phone.add(sideBtnR);
+const cameraBump = box(0.075, 0.012, 0.082, matCameraBump);
+cameraBump.position.set(-0.055, 0.048, 0.112);
+g_phone.add(cameraBump);
+[
+  [-0.072, 0.132],
+  [-0.044, 0.104],
+  [-0.072, 0.078]
+].forEach(p => {
+  const ring = cyl(0.014, 0.008, matPhone, 24);
+  ring.position.set(p[0], 0.039, p[1]);
+  g_phone.add(ring);
+  const lens = cyl(0.009, 0.010, matLens, 24);
+  lens.position.set(p[0], 0.033, p[1]);
+  g_phone.add(lens);
+});
+const flash = cyl(0.006, 0.006, matAcrylic, 16);
+flash.position.set(-0.044, 0.035, 0.135);
+g_phone.add(flash);
+const screenNormalArrow = new THREE.ArrowHelper(
+  new THREE.Vector3(0, 1, 0),
+  new THREE.Vector3(0, 0.105, 0),
+  0.28,
+  0x22c55e,
+  0.055,
+  0.03
+);
+g_phone.add(screenNormalArrow);
+const bootLogo = new THREE.Group();
+const logoCore = cyl(0.024, 0.005, matLogo, 28);
+logoCore.position.set(0, 0.099, 0.005);
+bootLogo.add(logoCore);
+const logoLeaf = box(0.018, 0.004, 0.008, matLogo);
+logoLeaf.position.set(0.015, 0.102, 0.034);
+logoLeaf.rotation.y = -0.45;
+bootLogo.add(logoLeaf);
+g_phone.add(bootLogo);
+
+const homeLayer = new THREE.Group();
+[
+  [-0.06, 0.07, matIconA], [0.00, 0.07, matIconB], [0.06, 0.07, matIconC],
+  [-0.06, 0.01, matIconC], [0.00, 0.01, matIconA], [0.06, 0.01, matIconB],
+  [-0.06, -0.05, matIconB], [0.00, -0.05, matIconC], [0.06, -0.05, matIconA]
+].forEach(p => {
+  const icon = box(0.032, 0.004, 0.032, p[2]);
+  icon.position.set(p[0], 0.099, p[1]);
+  homeLayer.add(icon);
+});
+const dock = box(0.145, 0.003, 0.035, matGlass);
+dock.position.set(0, 0.098, -0.125);
+homeLayer.add(dock);
+g_phone.add(homeLayer);
+
+let phoneState = 'off';
+let phoneBootTimer = null;
+let autoFaceTrack = false;
+
+function applyAngles(j1, j2, j3, j4, phoneTilt) {
+  g_j1.rotation.y = deg(j1);
+  
+  const t2 = deg(j2);
+  const t3 = deg(j3);
+  
+  g_upperArm.rotation.x = t2;
+  const Ey = S_y + L_arm * Math.cos(t2);
+  const Ez = S_z + L_arm * Math.sin(t2);
+  
+  g_j3Crank.rotation.x = t3;
+  const Py = R_y + L_j3Crank * Math.cos(t3);
+  const Pz = R_z + L_j3Crank * Math.sin(t3);
+
+  const couplerY = -0.38;
+  const couplerRadius = Math.abs(couplerY);
+  const dY = Py - Ey;
+  const dZ = Pz - Ez;
+  const d = Math.max(0.0001, Math.hypot(dY, dZ));
+  const a = (couplerRadius * couplerRadius - L_j3Rod * L_j3Rod + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, couplerRadius * couplerRadius - a * a));
+  const uY = dY / d;
+  const uZ = dZ / d;
+  const baseY = Ey + a * uY;
+  const baseZ = Ez + a * uZ;
+  const c1Y = baseY - h * uZ;
+  const c1Z = baseZ + h * uY;
+  const c2Y = baseY + h * uZ;
+  const c2Z = baseZ - h * uY;
+  const useFirst = c1Z < c2Z;
+  const Cy = useFirst ? c1Y : c2Y;
+  const Cz = useFirst ? c1Z : c2Z;
+  const faRot = Math.atan2((Cz - Ez) / couplerY, (Cy - Ey) / couplerY);
+
+  g_forearm.position.set(0, Ey, Ez);
+  g_forearm.rotation.x = faRot;
+
+  g_j3Rod.position.set(0, (Py + Cy) / 2, (Pz + Cz) / 2);
+  g_j3Rod.rotation.x = Math.atan2(Cz - Pz, Cy - Py);
+  
+  g_wrist.rotation.y = 0;
+  g_phone.rotation.set(deg(phoneTilt), deg(j4 + 180), 0);
+  
+  const forearmAngle = Math.PI / 2 - faRot;
+  const Wy = Ey + L_fa * Math.sin(forearmAngle);
+  const Wz = Ez + L_fa * Math.cos(forearmAngle);
+  let distText = '';
+  if (faceTarget.visible) {
+    g_phone.updateWorldMatrix(true, false);
+    const phoneWorld = g_phone.localToWorld(new THREE.Vector3(0, 0.09, 0));
+    const faceWorld = getFaceCenterWorld();
+    const phoneNormal = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(g_phone.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+    const faceNormal = getFaceNormalWorld();
+    const normalError = radToDeg(Math.acos(clamp(phoneNormal.dot(faceNormal.clone().negate()), -1, 1)));
+    distText = ' D=' + phoneWorld.distanceTo(faceWorld).toFixed(2) + ' Nerr=' + normalError.toFixed(0) + '°';
+  }
+  document.getElementById('eePos').textContent = 'H=' + Wy.toFixed(2) + ' R=' + Math.abs(Wz).toFixed(2) + distText;
+}
+
+let theta = 0.7, phi = 0.42, radius = 3.0;
+function updateCam() {
+  camera.position.set(
+    radius * Math.sin(theta) * Math.cos(phi),
+    radius * Math.sin(phi) + 0.55,
+    radius * Math.cos(theta) * Math.cos(phi)
+  );
+  camera.lookAt(0, 0.6, 0);
+}
+
+let isDrag = false, px = 0, py = 0;
+canvas.addEventListener('mousedown', e => { isDrag = true; px = e.clientX; py = e.clientY; });
+window.addEventListener('mouseup', () => isDrag = false);
+window.addEventListener('mousemove', e => {
+  if (!isDrag) return;
+  theta -= (e.clientX - px) * 0.005;
+  phi = Math.max(0.08, Math.min(1.35, phi - (e.clientY - py) * 0.005));
+  px = e.clientX; py = e.clientY;
+  updateCam();
+});
+canvas.addEventListener('wheel', e => {
+  radius = Math.max(1.5, Math.min(8, radius + e.deltaY * 0.005));
+  updateCam();
+}, { passive: true });
+
+function setPhoneState(state) {
+  phoneState = state;
+  phoneScreen.material = state === 'home' ? matHomeScreen : state === 'booting' ? matBootScreen : matScreen;
+  screenGlow.material = state === 'home' ? matBootGlow : matGlass;
+  screenGlow.visible = state !== 'off';
+  bootLogo.visible = state === 'booting';
+  homeLayer.visible = state === 'home';
+  dynamicIsland.visible = state === 'off';
+  earpiece.visible = state === 'off';
+  document.getElementById('btnBoot').textContent = state === 'off' ? '휴대폰 부팅' : '휴대폰 끄기';
+}
+
+function startPhoneBoot() {
+  clearTimeout(phoneBootTimer);
+  setPhoneState('booting');
+  phoneBootTimer = setTimeout(() => setPhoneState('home'), 1200);
+}
+
+function powerOffPhone() {
+  clearTimeout(phoneBootTimer);
+  phoneBootTimer = null;
+  setPhoneState('off');
+}
+
+function setAutoFaceTrack(on) {
+  autoFaceTrack = on;
+  const btn = document.getElementById('btnFaceTrack');
+  btn.textContent = on ? '얼굴 추적 ON' : '얼굴 추적 OFF';
+  btn.classList.toggle('active', on);
+  if (!on) readSliders();
+}
+
+function setSliderValue(id, value) {
+  document.getElementById(id).value = value;
+}
+
+function getFaceCenterWorld() {
+  faceHead.updateWorldMatrix(true, false);
+  return faceHead.localToWorld(new THREE.Vector3(0, 0.19, 0.14));
+}
+
+function getFaceNormalWorld() {
+  faceHead.updateWorldMatrix(true, false);
+  return new THREE.Vector3(0, 0, 1)
+    .applyQuaternion(faceHead.getWorldQuaternion(new THREE.Quaternion()))
+    .normalize();
+}
+
+function updateFaceTrackingMotors() {
+  if (!autoFaceTrack || !faceTarget.visible) return null;
+
+  const faceWorld = getFaceCenterWorld();
+  const faceNormalWorld = getFaceNormalWorld();
+  const desiredDistance = 0.58;
+  const mountTargetWorld = faceWorld.clone().add(faceNormalWorld.clone().multiplyScalar(desiredDistance));
+
+  const baseDeg = clamp(radToDeg(Math.atan2(mountTargetWorld.x, mountTargetWorld.z)), -170, 170);
+  const baseRad = deg(baseDeg);
+  const localZ = mountTargetWorld.x * Math.sin(baseRad) + mountTargetWorld.z * Math.cos(baseRad);
+  const shoulderY = g_j1.position.y + S_y;
+  const dy = mountTargetWorld.y - shoulderY;
+  const dz = localZ - S_z;
+  const elevationDeg = radToDeg(Math.atan2(dz, dy || 0.0001));
+  const j2Deg = clamp(elevationDeg, -10, 55);
+  const reach = Math.hypot(dy, dz);
+  const rawJ3Deg = ((270 - elevationDeg * 0.85 + (reach - 1.0) * 55) % 360 + 360) % 360;
+  const j3Deg = clamp(rawJ3Deg, 220, 350);
+
+  applyAngles(baseDeg, j2Deg, j3Deg, 0, 0);
+  g_wrist.updateWorldMatrix(true, false);
+  g_phone.updateWorldMatrix(true, false);
+  const phoneWorld = g_phone.localToWorld(new THREE.Vector3(0, 0.09, 0));
+  const desiredWorld = faceNormalWorld.clone().negate().normalize();
+  const desiredLocal = g_wrist.worldToLocal(phoneWorld.clone().add(desiredWorld)).sub(g_wrist.worldToLocal(phoneWorld.clone())).normalize();
+  const faceRoll = +document.getElementById('faceRoll').value;
+  const j4Deg = clamp(-faceRoll, -45, 45);
+  const tiltDeg = clamp(radToDeg(Math.atan2(desiredLocal.z, Math.hypot(desiredLocal.x, desiredLocal.y))), -22, 22);
+
+  return {
+    j1: Math.round(baseDeg),
+    j2: Math.round(j2Deg),
+    j3: Math.round(j3Deg),
+    j4: Math.round(j4Deg),
+    jg: Math.round(tiltDeg)
+  };
+}
+
+function applyFaceControls() {
+  const on = document.getElementById('faceOn').checked;
+  const x = +document.getElementById('faceX').value;
+  const y = +document.getElementById('faceY').value;
+  const z = +document.getElementById('faceZ').value;
+  const yaw = +document.getElementById('faceYaw').value;
+  const roll = +document.getElementById('faceRoll').value;
+  faceTarget.visible = on;
+  faceTarget.position.set(x, y, z);
+  faceTarget.rotation.y = deg(yaw);
+  faceHead.rotation.z = deg(roll);
+  document.getElementById('faceXv').textContent = x.toFixed(2);
+  document.getElementById('faceYv').textContent = y.toFixed(2);
+  document.getElementById('faceZv').textContent = z.toFixed(2);
+  document.getElementById('faceYawv').textContent = yaw + '°';
+  document.getElementById('faceRollv').textContent = roll + '°';
+}
+
+function readSliders() {
+  const a1 = +document.getElementById('j1').value;
+  const a2 = +document.getElementById('j2').value;
+  const a3 = +document.getElementById('j3').value;
+  const a4 = +document.getElementById('j4').value;
+  const gr = +document.getElementById('jg').value;
+  document.getElementById('j1v').textContent = a1 + '°';
+  document.getElementById('j2v').textContent = a2 + '°';
+  document.getElementById('j3v').textContent = a3 + '°';
+  document.getElementById('j4v').textContent = a4 + '°';
+  document.getElementById('jgv').textContent = gr + '°';
+  applyAngles(a1, a2, a3, a4, gr);
+}
+
+function moveSliderToward(id, target, rate, dt) {
+  const current = +document.getElementById(id).value;
+  const delta = clamp(target - current, -rate * dt, rate * dt);
+  setSliderValue(id, (current + delta).toFixed(2));
+}
+
+function moveAngle360Toward(id, target, rate, dt) {
+  const current = +document.getElementById(id).value;
+  const diff = ((target - current + 540) % 360) - 180;
+  const delta = clamp(diff, -rate * dt, rate * dt);
+  setSliderValue(id, ((current + delta) % 360 + 360) % 360);
+}
+
+function stepFaceTracking(dt) {
+  const target = updateFaceTrackingMotors();
+  if (!target) return;
+  moveSliderToward('j1', target.j1, 150, dt);
+  moveSliderToward('j2', target.j2, 45, dt);
+  moveSliderToward('j3', target.j3, 90, dt);
+  moveSliderToward('j4', target.j4, 90, dt);
+  moveSliderToward('jg', target.jg, 60, dt);
+  readSliders();
+}
+['j1', 'j2', 'j3', 'j4', 'jg'].forEach(id =>
+  document.getElementById(id).addEventListener('input', readSliders)
+);
+['faceX', 'faceY', 'faceZ', 'faceYaw', 'faceRoll'].forEach(id =>
+  document.getElementById(id).addEventListener('input', applyFaceControls)
+);
+document.getElementById('faceOn').addEventListener('change', applyFaceControls);
+document.getElementById('btnBoot').addEventListener('click', () => {
+  if (phoneState === 'off') startPhoneBoot();
+  else powerOffPhone();
+});
+document.getElementById('btnFaceTrack').addEventListener('click', () => setAutoFaceTrack(!autoFaceTrack));
+
+let mode = 'idle', animT = 0, personOrbit = false, orbitT = 0;
+document.getElementById('btnReset').addEventListener('click', () => {
+  mode = 'idle';
+  personOrbit = false;
+  document.getElementById('btnAnim').textContent = '자동 데모 ▶';
+  document.getElementById('btnPersonOrbit').textContent = '사람 궤도 데모 ▶';
+  document.getElementById('btnPersonOrbit').classList.remove('active');
+  document.getElementById('j1').value = 0;
+  document.getElementById('j2').value = 25;
+  document.getElementById('j3').value = 260;
+  document.getElementById('j4').value = 0;
+  document.getElementById('jg').value = 0;
+  document.getElementById('faceOn').checked = true;
+  document.getElementById('faceX').value = -1.45;
+  document.getElementById('faceY').value = 0.28;
+  document.getElementById('faceZ').value = 0.52;
+  document.getElementById('faceYaw').value = 60;
+  document.getElementById('faceRoll').value = 0;
+  powerOffPhone();
+  setAutoFaceTrack(false);
+  applyFaceControls();
+  readSliders();
+});
+document.getElementById('btnAnim').addEventListener('click', () => {
+  if (mode === 'auto') {
+    mode = 'idle';
+    document.getElementById('btnAnim').textContent = '자동 데모 ▶';
+  } else {
+    mode = 'auto';
+    animT = 0;
+    document.getElementById('btnAnim').textContent = '정지 ■';
+  }
+});
+document.getElementById('btnPersonOrbit').addEventListener('click', () => {
+  personOrbit = !personOrbit;
+  orbitT = 0;
+  document.getElementById('btnPersonOrbit').textContent = personOrbit ? '사람 궤도 정지 ■' : '사람 궤도 데모 ▶';
+  document.getElementById('btnPersonOrbit').classList.toggle('active', personOrbit);
+  if (personOrbit) {
+    document.getElementById('faceOn').checked = true;
+    setAutoFaceTrack(true);
+  }
+});
+
+function updatePersonOrbit(dt) {
+  orbitT += dt * 0.65;
+  const radius = 1.65;
+  const x = Math.cos(orbitT) * radius;
+  const z = Math.sin(orbitT) * radius;
+  const y = 0.32 + Math.sin(orbitT * 1.7) * 0.05;
+  const yaw = radToDeg(Math.atan2(-x, -z));
+  const roll = Math.sin(orbitT * 2.1) * 18;
+  document.getElementById('faceX').value = x.toFixed(2);
+  document.getElementById('faceY').value = y.toFixed(2);
+  document.getElementById('faceZ').value = z.toFixed(2);
+  document.getElementById('faceYaw').value = Math.round(yaw);
+  document.getElementById('faceRoll').value = Math.round(roll);
+  applyFaceControls();
+}
+
+let last = performance.now();
+function render() {
+  requestAnimationFrame(render);
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  if (personOrbit) updatePersonOrbit(dt);
+
+  if (autoFaceTrack && faceTarget.visible) {
+    stepFaceTracking(dt);
+  } else if (mode === 'auto') {
+    animT += dt * 0.7;
+    const a1 = Math.round(Math.sin(animT * 0.7) * 120);
+    const a2 = Math.round(25 + Math.sin(animT) * 30);
+    const a3 = Math.round(285 + Math.sin(animT * 1.1) * 45);
+    const a4 = Math.round((Math.sin(animT * 1.1) * 0.5 + 0.5) * 90);
+    const gr = Math.round(Math.sin(animT * 1.8) * 25);
+    document.getElementById('j1').value = a1;
+    document.getElementById('j2').value = a2;
+    document.getElementById('j3').value = a3;
+    document.getElementById('j4').value = a4;
+    document.getElementById('jg').value = gr;
+    readSliders();
+  }
+  
+  renderer.render(scene, camera);
+}
+
+setPhoneState('off');
+applyFaceControls();
+applyAngles(0, 25, 260, 0, 0);
+updateCam();
+render();
+</script>
+</body>
+</html>
