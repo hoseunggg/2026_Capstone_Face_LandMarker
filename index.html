@@ -176,7 +176,7 @@
           <div class="group-title">Robot <span class="group-subtitle">motors</span></div>
           <div class="row">
             <span class="lbl">J1 베이스</span>
-            <input type="range" id="j1" min="-170" max="170" value="0" step="1">
+            <input type="range" id="j1" min="0" max="360" value="0" step="1">
             <span id="j1v" class="val">0°</span>
           </div>
           <div class="row">
@@ -196,7 +196,7 @@
           </div>
           <div class="row">
             <span class="lbl">폰 틸트</span>
-            <input type="range" id="jg" min="-35" max="35" value="0" step="1">
+            <input type="range" id="jg" min="-80" max="80" value="0" step="1">
             <span id="jgv" class="val">0°</span>
           </div>
         </section>
@@ -285,7 +285,7 @@ const matPhoneBack = new THREE.MeshStandardMaterial({ color: 0xd7d9dd, roughness
 const matScreen = new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.08, metalness: 0.18 });
 const matGlass = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.06, metalness: 0.05 });
 const matBootScreen = new THREE.MeshStandardMaterial({ color: 0x05070a, emissive: 0x05070a, emissiveIntensity: 0.25, roughness: 0.08, metalness: 0.08 });
-const matHomeScreen = new THREE.MeshStandardMaterial({ color: 0x2563eb, emissive: 0x1d4ed8, emissiveIntensity: 0.42, roughness: 0.12, metalness: 0.02 });
+const matHomeScreen = new THREE.MeshStandardMaterial({ color: 0x020203, emissive: 0x020203, emissiveIntensity: 0.28, roughness: 0.1, metalness: 0.02 });
 const matBootGlow = new THREE.MeshStandardMaterial({ color: 0x93c5fd, emissive: 0x2563eb, emissiveIntensity: 0.75, transparent: true, opacity: 0.82, roughness: 0.08, metalness: 0.02 });
 const matLogo = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.35, roughness: 0.25, metalness: 0.0 });
 const matIconA = new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x15803d, emissiveIntensity: 0.25, roughness: 0.18, metalness: 0.0 });
@@ -302,6 +302,21 @@ const matEdge = new THREE.LineBasicMaterial({ color: 0x26313f, transparent: true
 const deg = d => d * Math.PI / 180;
 const radToDeg = r => r * 180 / Math.PI;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const easeInOut = t => {
+  const p = clamp(t, 0, 1);
+  return p * p * (3 - 2 * p);
+};
+const oneShotSine = t => Math.sin(clamp(t, 0, 1) * Math.PI);
+const rightThenLeftRoll = t => {
+  const p = clamp(t, 0, 1);
+  if (p < 0.5) return Math.sin(p * Math.PI * 2);
+  return -Math.sin((p - 0.5) * Math.PI * 2);
+};
+const doubleRightThenLeftRoll = t => {
+  const p = clamp(t, 0, 1);
+  if (p < 0.5) return rightThenLeftRoll(p * 2);
+  return rightThenLeftRoll((p - 0.5) * 2);
+};
 
 function box(w, h, d, mat) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -309,6 +324,39 @@ function box(w, h, d, mat) {
   const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), matEdge);
   m.add(e);
   return m;
+}
+function textPlane(text, w, h, fg = '#ffffff', bg = 'rgba(0, 0, 0, 0)', flipVertical = false, flipHorizontal = false) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  if (flipHorizontal) {
+    ctx.translate(c.width, 0);
+    ctx.scale(-1, 1);
+  }
+  if (flipVertical) {
+    ctx.translate(0, c.height);
+    ctx.scale(1, -1);
+  }
+  if (bg !== 'rgba(0, 0, 0, 0)') {
+    ctx.fillStyle = bg;
+    ctx.roundRect(54, 78, 404, 100, 28);
+    ctx.fill();
+  }
+  ctx.fillStyle = fg;
+  ctx.font = '800 88px -apple-system, BlinkMacSystemFont, "Noto Sans KR", sans-serif';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.18)';
+  ctx.shadowBlur = 8;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, c.width / 2, c.height / 2 + 2);
+  const texture = new THREE.CanvasTexture(c);
+  texture.anisotropy = 4;
+  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material);
+  mesh.rotation.x = -Math.PI / 2;
+  return mesh;
 }
 function cyl(r, h, mat, seg) {
   const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg || 14), mat);
@@ -576,11 +624,12 @@ const homeLayer = new THREE.Group();
 ].forEach(p => {
   const icon = box(0.032, 0.004, 0.032, p[2]);
   icon.position.set(p[0], 0.099, p[1]);
-  homeLayer.add(icon);
 });
 const dock = box(0.145, 0.003, 0.035, matGlass);
 dock.position.set(0, 0.098, -0.125);
-homeLayer.add(dock);
+const teamTitle = textPlane('종설 4조', 0.205, 0.11, '#050505', 'rgba(255, 255, 255, 0.92)', true, true);
+teamTitle.position.set(0, 0.104, 0.002);
+homeLayer.add(teamTitle);
 g_phone.add(homeLayer);
 
 let phoneState = 'off';
@@ -688,7 +737,7 @@ function setPhoneState(state) {
 function startPhoneBoot() {
   clearTimeout(phoneBootTimer);
   setPhoneState('booting');
-  phoneBootTimer = setTimeout(() => setPhoneState('home'), 1200);
+  phoneBootTimer = setTimeout(() => setPhoneState('home'), 2400);
 }
 
 function powerOffPhone() {
@@ -721,42 +770,70 @@ function getFaceNormalWorld() {
     .normalize();
 }
 
+function getPhonePoseWorld() {
+  g_phone.updateWorldMatrix(true, false);
+  return {
+    point: g_phone.localToWorld(new THREE.Vector3(0, 0.09, 0)),
+    normal: new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(g_phone.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize()
+  };
+}
+
+function trackingCost(pose, faceWorld, faceNormalWorld) {
+  applyAngles(pose.j1, pose.j2, pose.j3, pose.j4, pose.jg);
+  const phone = getPhonePoseWorld();
+  const desiredPhonePoint = faceWorld.clone().add(faceNormalWorld.clone().multiplyScalar(0.58));
+  const positionCost = phone.point.distanceTo(desiredPhonePoint) * 8.0;
+  const normalCost = 1 - phone.normal.dot(faceNormalWorld.clone().negate());
+  return positionCost + normalCost * 5.0;
+}
+
 function updateFaceTrackingMotors() {
   if (!autoFaceTrack || !faceTarget.visible) return null;
 
   const faceWorld = getFaceCenterWorld();
   const faceNormalWorld = getFaceNormalWorld();
-  const desiredDistance = 0.58;
-  const mountTargetWorld = faceWorld.clone().add(faceNormalWorld.clone().multiplyScalar(desiredDistance));
-
-  const baseDeg = clamp(radToDeg(Math.atan2(mountTargetWorld.x, mountTargetWorld.z)), -170, 170);
-  const baseRad = deg(baseDeg);
-  const localZ = mountTargetWorld.x * Math.sin(baseRad) + mountTargetWorld.z * Math.cos(baseRad);
-  const shoulderY = g_j1.position.y + S_y;
-  const dy = mountTargetWorld.y - shoulderY;
-  const dz = localZ - S_z;
-  const elevationDeg = radToDeg(Math.atan2(dz, dy || 0.0001));
-  const j2Deg = clamp(elevationDeg, -10, 55);
-  const reach = Math.hypot(dy, dz);
-  const rawJ3Deg = ((270 - elevationDeg * 0.85 + (reach - 1.0) * 55) % 360 + 360) % 360;
-  const j3Deg = clamp(rawJ3Deg, 220, 350);
-
-  applyAngles(baseDeg, j2Deg, j3Deg, 0, 0);
-  g_wrist.updateWorldMatrix(true, false);
-  g_phone.updateWorldMatrix(true, false);
-  const phoneWorld = g_phone.localToWorld(new THREE.Vector3(0, 0.09, 0));
-  const desiredWorld = faceNormalWorld.clone().negate().normalize();
-  const desiredLocal = g_wrist.worldToLocal(phoneWorld.clone().add(desiredWorld)).sub(g_wrist.worldToLocal(phoneWorld.clone())).normalize();
+  const current = {
+    j1: +document.getElementById('j1').value,
+    j2: +document.getElementById('j2').value,
+    j3: +document.getElementById('j3').value,
+    j4: +document.getElementById('j4').value,
+    jg: +document.getElementById('jg').value
+  };
   const faceRoll = +document.getElementById('faceRoll').value;
-  const j4Deg = clamp(-faceRoll, -45, 45);
-  const tiltDeg = clamp(radToDeg(Math.atan2(desiredLocal.z, Math.hypot(desiredLocal.x, desiredLocal.y))), -22, 22);
+  const directBase = (radToDeg(Math.atan2(faceWorld.x, faceWorld.z)) + 360) % 360;
+  let best = { ...current, j1: directBase, j4: -faceRoll };
+  let bestCost = trackingCost(best, faceWorld, faceNormalWorld);
+  const axes = [
+    ['j1', 34, 0, 360],
+    ['j2', 14, -50, 80],
+    ['j3', 28, 220, 350],
+    ['jg', 12, -22, 22]
+  ];
+
+  for (let pass = 0; pass < 3; pass++) {
+    axes.forEach(axis => {
+      const [key, baseStep, min, max] = axis;
+      const step = baseStep / (pass + 1);
+      [-step, step].forEach(delta => {
+        const candidate = { ...best };
+        candidate[key] = clamp(candidate[key] + delta, min, max);
+        const cost = trackingCost(candidate, faceWorld, faceNormalWorld);
+        if (cost < bestCost) {
+          best = candidate;
+          bestCost = cost;
+        }
+      });
+    });
+  }
 
   return {
-    j1: Math.round(baseDeg),
-    j2: Math.round(j2Deg),
-    j3: Math.round(j3Deg),
-    j4: Math.round(j4Deg),
-    jg: Math.round(tiltDeg)
+    j1: Math.round(best.j1),
+    j2: Math.round(best.j2),
+    j3: Math.round(best.j3),
+    j4: Math.round(-faceRoll),
+    jg: Math.round(best.jg)
   };
 }
 
@@ -808,11 +885,31 @@ function moveAngle360Toward(id, target, rate, dt) {
 function stepFaceTracking(dt) {
   const target = updateFaceTrackingMotors();
   if (!target) return;
-  moveSliderToward('j1', target.j1, 150, dt);
+  moveAngle360Toward('j1', target.j1, 150, dt);
   moveSliderToward('j2', target.j2, 45, dt);
   moveSliderToward('j3', target.j3, 90, dt);
   moveSliderToward('j4', target.j4, 90, dt);
   moveSliderToward('jg', target.jg, 60, dt);
+  readSliders();
+}
+
+function stepRobotPose(target, dt) {
+  moveAngle360Toward('j1', target.j1, 70, dt);
+  moveSliderToward('j2', target.j2, 24, dt);
+  moveSliderToward('j3', target.j3, 42, dt);
+  moveSliderToward('j4', target.j4, 45, dt);
+  moveSliderToward('jg', target.jg, 28, dt);
+  readSliders();
+}
+
+function snapFaceTrackingMotors() {
+  const target = updateFaceTrackingMotors();
+  if (!target) return;
+  setSliderValue('j1', target.j1);
+  setSliderValue('j2', target.j2);
+  setSliderValue('j3', target.j3);
+  setSliderValue('j4', target.j4);
+  setSliderValue('jg', target.jg);
   readSliders();
 }
 ['j1', 'j2', 'j3', 'j4', 'jg'].forEach(id =>
@@ -828,10 +925,53 @@ document.getElementById('btnBoot').addEventListener('click', () => {
 });
 document.getElementById('btnFaceTrack').addEventListener('click', () => setAutoFaceTrack(!autoFaceTrack));
 
-let mode = 'idle', animT = 0, personOrbit = false, orbitT = 0;
+function getViewerPresentationPose() {
+  const currentPose = {
+    j1: +document.getElementById('j1').value,
+    j2: +document.getElementById('j2').value,
+    j3: +document.getElementById('j3').value,
+    j4: +document.getElementById('j4').value,
+    jg: +document.getElementById('jg').value
+  };
+  const basePose = {
+    j1: (radToDeg(Math.atan2(camera.position.x, camera.position.z)) + 360) % 360,
+    j2: 34,
+    j3: 285,
+    j4: 0,
+    jg: 0
+  };
+  let best = { ...basePose };
+  let bestCost = Infinity;
+
+  for (let j1 = 0; j1 < 360; j1 += 15) {
+    for (let j4 = -90; j4 <= 90; j4 += 10) {
+      for (let jg = -80; jg <= 80; jg += 8) {
+        const candidate = { ...basePose, j1, j4, jg };
+        applyAngles(candidate.j1, candidate.j2, candidate.j3, candidate.j4, candidate.jg);
+        const phone = getPhonePoseWorld();
+        const toViewer = camera.position.clone().sub(phone.point).normalize();
+        const normalCost = 1 - phone.normal.dot(toViewer);
+        const baseCost = Math.abs(((j1 - basePose.j1 + 540) % 360) - 180) * 0.0008;
+        const tiltCost = Math.abs(jg) * 0.0012 + Math.abs(j4) * 0.0008;
+        const cost = normalCost + baseCost + tiltCost;
+        if (cost < bestCost) {
+          best = candidate;
+          bestCost = cost;
+        }
+      }
+    }
+  }
+  applyAngles(currentPose.j1, currentPose.j2, currentPose.j3, currentPose.j4, currentPose.jg);
+  return best;
+}
+let mode = 'idle', animT = 0, personOrbit = false, personOrbitTime = 0, personOrbitBooted = false;
+let personOrbitPresentingToViewer = false;
 document.getElementById('btnReset').addEventListener('click', () => {
   mode = 'idle';
   personOrbit = false;
+  personOrbitTime = 0;
+  personOrbitBooted = false;
+  personOrbitPresentingToViewer = false;
   document.getElementById('btnAnim').textContent = '자동 데모 ▶';
   document.getElementById('btnPersonOrbit').textContent = '사람 궤도 데모 ▶';
   document.getElementById('btnPersonOrbit').classList.remove('active');
@@ -842,7 +982,7 @@ document.getElementById('btnReset').addEventListener('click', () => {
   document.getElementById('jg').value = 0;
   document.getElementById('faceOn').checked = true;
   document.getElementById('faceX').value = -1.45;
-  document.getElementById('faceY').value = 0.28;
+  document.getElementById('faceY').value = 0.1;
   document.getElementById('faceZ').value = 0.52;
   document.getElementById('faceYaw').value = 60;
   document.getElementById('faceRoll').value = 0;
@@ -863,29 +1003,74 @@ document.getElementById('btnAnim').addEventListener('click', () => {
 });
 document.getElementById('btnPersonOrbit').addEventListener('click', () => {
   personOrbit = !personOrbit;
-  orbitT = 0;
+  personOrbitTime = 0;
+  personOrbitBooted = false;
+  personOrbitPresentingToViewer = false;
   document.getElementById('btnPersonOrbit').textContent = personOrbit ? '사람 궤도 정지 ■' : '사람 궤도 데모 ▶';
   document.getElementById('btnPersonOrbit').classList.toggle('active', personOrbit);
   if (personOrbit) {
+    powerOffPhone();
     document.getElementById('faceOn').checked = true;
+    updatePersonOrbit(0);
     setAutoFaceTrack(true);
+    snapFaceTrackingMotors();
   }
 });
 
 function updatePersonOrbit(dt) {
-  orbitT += dt * 0.65;
-  const radius = 1.65;
-  const x = Math.cos(orbitT) * radius;
-  const z = Math.sin(orbitT) * radius;
-  const y = 0.32 + Math.sin(orbitT * 1.7) * 0.05;
+  personOrbitTime += dt;
+
+  const startHold = 1.0;
+  const orbitDuration = 8.2;
+  const waitAfterOrbit = 1.0;
+  const liftDuration = 3.6;
+  const waitAfterLift = 1.0;
+  const distanceDuration = 3.4;
+  const waitAfterDistance = 1.0;
+  const rollDuration = 4.4;
+  const waitAfterRoll = 1.0;
+  const presentationDuration = 4.2;
+  const waitAfterPresentation = 1.0;
+
+  const motionTime = Math.max(0, personOrbitTime - startHold);
+
+  const liftStart = orbitDuration + waitAfterOrbit;
+  const distanceStart = liftStart + liftDuration + waitAfterLift;
+  const rollStart = distanceStart + distanceDuration + waitAfterDistance;
+  const presentationStart = rollStart + rollDuration + waitAfterRoll;
+  const bootStart = presentationStart + presentationDuration + waitAfterPresentation;
+  personOrbitPresentingToViewer = motionTime >= presentationStart;
+
+  const orbitPhase = clamp(motionTime / orbitDuration, 0, 1);
+  const liftPhase = easeInOut((motionTime - liftStart) / liftDuration);
+  const distancePhase = (motionTime - distanceStart) / distanceDuration;
+  const rollPhase = (motionTime - rollStart) / rollDuration;
+
+  const orbitAngle = orbitPhase * Math.PI * 1.5;
+  const radius = 1.6 - oneShotSine(distancePhase) * 0.5;
+  const liftAfterOrbit = liftPhase * 0.8;
+  const roll = doubleRightThenLeftRoll(rollPhase) * 28;
+
+  const x = Math.cos(orbitAngle) * radius;
+  const z = Math.sin(orbitAngle) * radius;
+  const y = 0.1 + liftAfterOrbit;
   const yaw = radToDeg(Math.atan2(-x, -z));
-  const roll = Math.sin(orbitT * 2.1) * 18;
   document.getElementById('faceX').value = x.toFixed(2);
   document.getElementById('faceY').value = y.toFixed(2);
   document.getElementById('faceZ').value = z.toFixed(2);
   document.getElementById('faceYaw').value = Math.round(yaw);
   document.getElementById('faceRoll').value = Math.round(roll);
   applyFaceControls();
+
+  if (personOrbitPresentingToViewer) {
+    document.getElementById('faceOn').checked = false;
+    applyFaceControls();
+    setAutoFaceTrack(false);
+  }
+  if (!personOrbitBooted && motionTime >= bootStart) {
+    personOrbitBooted = true;
+    if (phoneState === 'off') startPhoneBoot();
+  }
 }
 
 let last = performance.now();
@@ -897,11 +1082,15 @@ function render() {
 
   if (personOrbit) updatePersonOrbit(dt);
 
-  if (autoFaceTrack && faceTarget.visible) {
+  const holdingPersonOrbitStart = personOrbit && personOrbitTime < 1.0;
+  screenNormalArrow.visible = !(autoFaceTrack || personOrbitPresentingToViewer);
+  if (personOrbitPresentingToViewer) {
+    stepRobotPose(getViewerPresentationPose(), dt);
+  } else if (autoFaceTrack && faceTarget.visible && !holdingPersonOrbitStart) {
     stepFaceTracking(dt);
   } else if (mode === 'auto') {
     animT += dt * 0.7;
-    const a1 = Math.round(Math.sin(animT * 0.7) * 120);
+    const a1 = Math.round((animT * 80) % 360);
     const a2 = Math.round(25 + Math.sin(animT) * 30);
     const a3 = Math.round(285 + Math.sin(animT * 1.1) * 45);
     const a4 = Math.round((Math.sin(animT * 1.1) * 0.5 + 0.5) * 90);
