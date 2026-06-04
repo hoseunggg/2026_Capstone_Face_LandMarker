@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Face Landmarker</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+
+    h2 {
+      margin: 10px 0;
+    }
+
+    #status {
+      margin: 8px;
+      font-size: 14px;
+      color: #ccc;
+    }
+
+    #networkPanel {
+      margin: 8px auto 10px;
+      font-size: 14px;
+      max-width: 720px;
+      padding: 0 10px;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+
+    #targetIp {
+      padding: 8px;
+      width: 280px;
+      max-width: 80vw;
+      border-radius: 6px;
+      border: none;
+    }
+
+    button {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .btn-test {
+      background: #4a90e2;
+      color: white;
+    }
+
+    .btn-on {
+      background: #28a745;
+      color: white;
+    }
+
+    .btn-off {
+      background: #dc3545;
+      color: white;
+    }
+
+    #intervalInput {
+      padding: 8px;
+      width: 80px;
+      border-radius: 6px;
+      border: none;
+    }
+
+    label {
+      color: #ccc;
+    }
+
+    #netStatus {
+      margin-top: 6px;
+      color: #ccc;
+    }
+
+    #connStatus {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: bold;
+      margin-left: 8px;
+    }
+
+    .conn-idle { background: #555; color: white; }
+    .conn-ok   { background: #28a745; color: white; }
+    .conn-fail { background: #dc3545; color: white; }
+    .conn-wait { background: #ff9800; color: white; }
+
+    #fpsBox {
+      position: fixed;
+      top: 10px;
+      right: 12px;
+      background: rgba(0, 0, 0, 0.65);
+      color: lime;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 999;
+    }
+
+    #container {
+      width: 100vw;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    video {
+      display: none;
+    }
+
+    canvas {
+      width: 100%;
+      height: auto;
+      border-radius: 12px;
+      background: #000;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="fpsBox">FPS: 0</div>
+
+  <h2>Face Landmarker</h2>
+  <div id="status">Loading...</div>
+
+  <div id="networkPanel">
+    <div class="row">
+      <input id="targetIp" placeholder="예: 192.168.0.12:8000 / 192.168.4.1" />
+    </div>
+    <div class="row">
+      <button class="btn-test" onclick="sendTest()">신호 테스트</button>
+      <button id="autoBtn" class="btn-on" onclick="toggleAuto()">자동 전송 ON</button>
+    </div>
+    <div class="row">
+      <label for="intervalInput">전송 주기 (ms):</label>
+      <input id="intervalInput" type="number" min="50" max="5000" step="50" value="200" />
+      <span id="connStatus" class="conn-idle">대기중</span>
+    </div>
+    <div id="netStatus">통신 대기</div>
+  </div>
+
+  <div id="container">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script type="module">
+    import {
+      FaceLandmarker,
+      FilesetResolver
+    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const statusText = document.getElementById("status");
+    const netStatus = document.getElementById("netStatus");
+    const connStatus = document.getElementById("connStatus");
+    const fpsBox = document.getElementById("fpsBox");
+    const autoBtn = document.getElementById("autoBtn");
+    const intervalInput = document.getElementById("intervalInput");
+
+    let landmarker;
+    let lastVideoTime = -1;
+
+    let fpsCount = 0;
+    let fpsLastTime = performance.now();
+
+    // 자동 전송 관련 상태
+    let autoSendEnabled = false;
+    let autoSendTimer = null;
+    let lastSendOk = null;        // null=아직 없음, true=성공, false=실패
+    let lastSendTime = 0;
+    let inFlight = false;          // 동시 요청 방지
+    let consecutiveFails = 0;
+
+    // 최신 얼굴 데이터 (전송용)
+    let latestData = null;
+
+    const LEFT_EYE_OUTER = 33;
+    const RIGHT_EYE_OUTER = 263;
+    const NOSE_TIP = 1;
+    const MOUTH_CENTER = 13;
+
+    function setConnStatus(state, text) {
+      connStatus.className = "conn-" + state;
+      connStatus.innerText = text;
+    }
+
+    // 단발 테스트 전송
+    window.sendTest = async function () {
+      const input = document.getElementById("targetIp").value.trim();
+
+      if (!input) {
+        netStatus.innerText = "IP 입력 필요";
+        return;
+      }
+
+      setConnStatus("wait", "테스트중...");
+
+      try {
+        const res = await fetch(`https://${input}/set?x=90&y=120`, {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        if (res.ok) {
+          netStatus.innerText = "통신 OK: x=90, y=120 전송";
+          setConnStatus("ok", "연결됨");
+        } else {
+          netStatus.innerText = `통신 실패: ${res.status}`;
+          setConnStatus("fail", "실패");
+        }
+      } catch (err) {
+        netStatus.innerText = "통신 실패: " + err.message;
+        setConnStatus("fail", "실패");
+      }
+    };
+
+    // 자동 전송 토글
+    window.toggleAuto = function () {
+      autoSendEnabled = !autoSendEnabled;
+
+      if (autoSendEnabled) {
+        const ip = document.getElementById("targetIp").value.trim();
+        if (!ip) {
+          autoSendEnabled = false;
+          netStatus.innerText = "IP 입력 필요";
+          return;
+        }
+
+        autoBtn.innerText = "자동 전송 OFF";
+        autoBtn.classList.remove("btn-on");
+        autoBtn.classList.add("btn-off");
+        setConnStatus("wait", "전송중...");
+        scheduleAutoSend();
+      } else {
+        autoBtn.innerText = "자동 전송 ON";
+        autoBtn.classList.remove("btn-off");
+        autoBtn.classList.add("btn-on");
+        if (autoSendTimer) {
+          clearTimeout(autoSendTimer);
+          autoSendTimer = null;
+        }
+        setConnStatus("idle", "중단됨");
+      }
+    };
+
+    function scheduleAutoSend() {
+      if (!autoSendEnabled) return;
+
+      const interval = Math.max(50, parseInt(intervalInput.value) || 200);
+      autoSendTimer = setTimeout(async () => {
+        await doAutoSend();
+        scheduleAutoSend();
+      }, interval);
+    }
+
+    async function doAutoSend() {
+      if (!autoSendEnabled) return;
+      if (inFlight) return;
+      if (!latestData) {
+        netStatus.innerText = "얼굴 감지 안됨 - 전송 보류";
+        return;
+      }
+
+      const ip = document.getElementById("targetIp").value.trim();
+      if (!ip) return;
+
+      const d = latestData;
+      // 쿼리 파라미터로 모든 값 전송
+      const url = `https://${ip}/set?x=${d.errorX}&y=${d.errorY}` +
+                  `&yaw=${d.yaw.toFixed(3)}` +
+                  `&pitch=${d.pitch.toFixed(3)}` +
+                  `&roll=${d.roll.toFixed(2)}`;
+
+      inFlight = true;
+      lastSendTime = performance.now();
+
+      try {
+        const res = await fetch(url, {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        if (res.ok) {
+          lastSendOk = true;
+          consecutiveFails = 0;
+          setConnStatus("ok", "연결됨");
+          netStatus.innerText = `전송 OK: x=${d.errorX}, y=${d.errorY}, yaw=${d.yaw.toFixed(2)}, pitch=${d.pitch.toFixed(2)}, roll=${d.roll.toFixed(1)}`;
+        } else {
+          lastSendOk = false;
+          consecutiveFails++;
+          setConnStatus("fail", `실패 (${consecutiveFails})`);
+          netStatus.innerText = `전송 실패: ${res.status}`;
+        }
+      } catch (err) {
+        lastSendOk = false;
+        consecutiveFails++;
+        setConnStatus("fail", `실패 (${consecutiveFails})`);
+        netStatus.innerText = "전송 실패: " + err.message;
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    function updateFPS() {
+      fpsCount++;
+      const now = performance.now();
+
+      if (now - fpsLastTime >= 1000) {
+        fpsBox.innerText = `FPS: ${fpsCount}`;
+        fpsCount = 0;
+        fpsLastTime = now;
+      }
+    }
+
+    function clamp(v, low, high) {
+      return Math.max(low, Math.min(v, high));
+    }
+
+    function px(p) {
+      return {
+        x: p.x * canvas.width,
+        y: p.y * canvas.height,
+        z: p.z
+      };
+    }
+
+    function drawText(text, x, y, color = "lime", size = 18) {
+      ctx.font = `${size}px Arial`;
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, y);
+    }
+
+    function drawPoint(p, name, color = "red") {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      drawText(name, p.x + 6, p.y - 6, "lime", 15);
+    }
+
+    async function initCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      });
+
+      video.srcObject = stream;
+
+      return new Promise(resolve => {
+        video.onloadedmetadata = async () => {
+          await video.play();
+          resolve();
+        };
+      });
+    }
+
+    async function initMediaPipe() {
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+      );
+
+      landmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        outputFaceBlendshapes: false,
+        outputFacialTransformationMatrixes: true
+      });
+    }
+
+    function drawFaceBox(landmarks) {
+      let minX = canvas.width;
+      let minY = canvas.height;
+      let maxX = 0;
+      let maxY = 0;
+
+      for (const lm of landmarks) {
+        const p = px(lm);
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
+
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+      drawText("FACE", minX, minY - 8, "red", 16);
+    }
+
+    function drawInfo(landmarks) {
+      const lEye = px(landmarks[LEFT_EYE_OUTER]);
+      const rEye = px(landmarks[RIGHT_EYE_OUTER]);
+      const nose = px(landmarks[NOSE_TIP]);
+      const mouth = px(landmarks[MOUTH_CENTER]);
+
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
+      ctx.fillStyle = "blue";
+      ctx.fill();
+
+      drawPoint(lEye, "L-eye");
+      drawPoint(rEye, "R-eye");
+      drawPoint(nose, "Nose");
+      drawPoint(mouth, "Mouth");
+
+      const faceCX = (lEye.x + rEye.x + nose.x + mouth.x) / 4;
+      const faceCY = (lEye.y + rEye.y + nose.y + mouth.y) / 4;
+
+      ctx.beginPath();
+      ctx.arc(faceCX, faceCY, 6, 0, Math.PI * 2);
+      ctx.fillStyle = "cyan";
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(faceCX, faceCY);
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      const errorX = Math.round(faceCX - centerX);
+      const errorY = Math.round(faceCY - centerY);
+
+      const dxEye = rEye.x - lEye.x;
+      const dyEye = rEye.y - lEye.y;
+      const rollDeg = Math.atan2(dyEye, dxEye) * 180 / Math.PI;
+
+      const eyeMidX = (lEye.x + rEye.x) / 2;
+      const eyeMidY = (lEye.y + rEye.y) / 2;
+      const eyeDist = Math.max(1, Math.hypot(dxEye, dyEye));
+
+      let yawLike = (nose.x - eyeMidX) / eyeDist;
+      yawLike = clamp(yawLike, -1.5, 1.5);
+
+      const noseToEye = nose.y - eyeMidY;
+      const mouthToNose = mouth.y - nose.y;
+
+      let pitchLike = (mouthToNose - noseToEye) / eyeDist;
+      pitchLike = clamp(pitchLike, -1.5, 1.5);
+
+      let yawState = "CENTER";
+      if (yawLike > 0.10) yawState = "TURN RIGHT";
+      else if (yawLike < -0.10) yawState = "TURN LEFT";
+
+      let rollState = "LEVEL";
+      if (rollDeg > 8) rollState = "TILT RIGHT";
+      else if (rollDeg < -8) rollState = "TILT LEFT";
+
+      let pitchState = "LEVEL";
+      if (pitchLike > 0.12) pitchState = "LOOK DOWN";
+      else if (pitchLike < -0.12) pitchState = "LOOK UP";
+
+      drawText(`error_x: ${errorX}`, 10, 30);
+      drawText(`error_y: ${errorY}`, 10, 60);
+      drawText(`roll: ${rollDeg.toFixed(1)}`, 10, 90);
+      drawText(`yaw_like: ${yawLike.toFixed(2)}`, 10, 120);
+      drawText(`pitch_like: ${pitchLike.toFixed(2)}`, 10, 150);
+
+      drawText(`yaw state: ${yawState}`, 10, 195, "orange", 20);
+      drawText(`roll state: ${rollState}`, 10, 230, "orange", 20);
+      drawText(`pitch state: ${pitchState}`, 10, 265, "orange", 20);
+
+      // 자동 전송용 최신 데이터 갱신
+      latestData = {
+        errorX,
+        errorY,
+        yaw: yawLike,
+        pitch: pitchLike,
+        roll: rollDeg
+      };
+
+      statusText.innerText = `Face detected | x=${errorX}, y=${errorY}`;
+    }
+
+    function loop() {
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const result = landmarker.detectForVideo(video, performance.now());
+
+        if (result.faceLandmarks.length > 0) {
+          const landmarks = result.faceLandmarks[0];
+          drawFaceBox(landmarks);
+          drawInfo(landmarks);
+        } else {
+          drawText("No face", 10, 35, "red", 22);
+          statusText.innerText = "No face";
+          latestData = null;   // 얼굴 없으면 전송 데이터도 비움
+        }
+      }
+
+      updateFPS();
+      requestAnimationFrame(loop);
+    }
+
+    async function main() {
+      try {
+        statusText.innerText = "Camera loading...";
+        await initCamera();
+
+        statusText.innerText = "MediaPipe loading...";
+        await initMediaPipe();
+
+        statusText.innerText = "Ready";
+        setConnStatus("idle", "대기중");
+        loop();
+      } catch (err) {
+        console.error(err);
+        statusText.innerText = "Error: " + err.message;
+      }
+    }
+
+    main();
+  </script>
+</body>
+</html>
