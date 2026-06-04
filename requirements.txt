@@ -1,6 +1,7 @@
 # 로봇 시뮬레이터 (simul.py) 의존성
 matplotlib>=3.5.0
 numpy>=1.21.0
+pyvista>=0.43.0
 
 # Flask 서버 (server.py) 의존성  
 flask>=2.0.0

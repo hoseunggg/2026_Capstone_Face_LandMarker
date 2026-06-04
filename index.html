@@ -140,16 +140,101 @@
     color: #667486;
     font-size: 11px;
   }
+  .motor-monitor {
+    padding: 0 12px 12px;
+  }
+  .motor-panel {
+    background: #ffffff;
+    border: 1px solid #d9dee7;
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .motor-panel .group-title {
+    color: #26313f;
+  }
+  .motor-panel .group-subtitle {
+    color: #7a8797;
+  }
+  .motor-dashboard {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 170px;
+    gap: 14px;
+    margin-top: 10px;
+    align-items: stretch;
+  }
+  .motor-chart-wrap {
+    position: relative;
+    min-height: 220px;
+    border: 1px solid #d9dee7;
+    border-radius: 6px;
+    overflow: hidden;
+    background:
+      linear-gradient(#eef2f7 1px, transparent 1px),
+      linear-gradient(90deg, #f3f6fa 1px, transparent 1px),
+      #ffffff;
+    background-size: 100% 44px, 72px 100%, auto;
+  }
+  #motorChart {
+    width: 100%;
+    height: 220px;
+    display: block;
+  }
+  .motor-readouts {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .motor-meter {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) 44px;
+    gap: 8px;
+    align-items: center;
+    min-height: 34px;
+    color: #26313f;
+    font-size: 11px;
+  }
+  .meter-name {
+    font-weight: 800;
+    color: var(--accent);
+  }
+  .meter-track {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #edf1f6;
+  }
+  .meter-fill {
+    width: calc(var(--level, 0) * 100%);
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+  }
+  .meter-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #526070;
+    text-align: right;
+  }
+  .motor-caption {
+    margin-top: 10px;
+    color: #667486;
+    font-size: 11px;
+    line-height: 1.35;
+  }
   @media (max-width: 860px) {
     body { padding: 10px; }
     .controls { grid-template-columns: 1fr; }
     .control-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .control-group.actions { grid-template-columns: 1fr; }
+    .motor-dashboard { grid-template-columns: 1fr; }
+    .motor-readouts { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .motor-meter { grid-template-columns: 1fr; gap: 5px; }
+    .meter-value { text-align: left; }
     canvas { height: 460px; }
     .canvas-wrap { min-height: 460px; }
   }
   @media (max-width: 560px) {
     .controls, .control-group { grid-template-columns: 1fr; }
+    .motor-readouts { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -244,6 +329,44 @@
           <p class="hint">추적 모드에서는 모터값이 목표 방향으로 천천히 이동합니다.</p>
         </section>
       </div>
+      <section class="motor-monitor">
+        <div class="motor-panel">
+          <div class="group-title">Estimated Torque <span class="group-subtitle">model output</span></div>
+          <div class="motor-dashboard">
+            <div class="motor-chart-wrap">
+              <canvas id="motorChart"></canvas>
+            </div>
+            <div class="motor-readouts">
+              <div class="motor-meter" style="--accent: #38bdf8">
+                <span class="meter-name">J1</span>
+                <span class="meter-track"><span class="meter-fill" id="j1bar"></span></span>
+                <span class="meter-value" id="j1barv">0.00</span>
+              </div>
+              <div class="motor-meter" style="--accent: #22c55e">
+                <span class="meter-name">J2</span>
+                <span class="meter-track"><span class="meter-fill" id="j2bar"></span></span>
+                <span class="meter-value" id="j2barv">0.00</span>
+              </div>
+              <div class="motor-meter" style="--accent: #f97316">
+                <span class="meter-name">J3</span>
+                <span class="meter-track"><span class="meter-fill" id="j3bar"></span></span>
+                <span class="meter-value" id="j3barv">0.00</span>
+              </div>
+              <div class="motor-meter" style="--accent: #a855f7">
+                <span class="meter-name">J4</span>
+                <span class="meter-track"><span class="meter-fill" id="j4bar"></span></span>
+                <span class="meter-value" id="j4barv">0.00</span>
+              </div>
+              <div class="motor-meter" style="--accent: #ef4444">
+                <span class="meter-name">Tilt</span>
+                <span class="meter-track"><span class="meter-fill" id="jgbar"></span></span>
+                <span class="meter-value" id="jgbarv">0.00</span>
+              </div>
+            </div>
+          </div>
+          <p class="motor-caption">실측 센서값이 아닌 기구 모델 기반 추정치입니다. 단위: kg·cm</p>
+        </div>
+      </section>
     </aside>
   </div>
 </div>
@@ -256,6 +379,23 @@ canvas.width = W * devicePixelRatio;
 canvas.height = H * devicePixelRatio;
 canvas.style.width = W + 'px';
 canvas.style.height = H + 'px';
+const motorChart = document.getElementById('motorChart');
+const motorCtx = motorChart.getContext('2d');
+const NM_TO_KG_CM = 10.19716213;
+const TORQUE_GRAPH_MAX = 15;
+const motorSpecs = [
+  { id: 'j1', label: 'J1', capacity: TORQUE_GRAPH_MAX, color: '#0284c7' },
+  { id: 'j2', label: 'J2', capacity: TORQUE_GRAPH_MAX, color: '#16a34a' },
+  { id: 'j3', label: 'J3', capacity: TORQUE_GRAPH_MAX, color: '#ea580c' },
+  { id: 'j4', label: 'J4', capacity: TORQUE_GRAPH_MAX, color: '#7c3aed' },
+  { id: 'jg', label: 'Tilt', capacity: TORQUE_GRAPH_MAX, color: '#dc2626' }
+];
+const motorHistory = motorSpecs.reduce((history, spec) => {
+  history[spec.id] = [];
+  return history;
+}, {});
+let motorGraphFrame = 0;
+let torquePrev = null;
 
 const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(devicePixelRatio);
@@ -328,7 +468,7 @@ function box(w, h, d, mat) {
 function textPlane(text, w, h, fg = '#ffffff', bg = 'rgba(0, 0, 0, 0)', flipVertical = false, flipHorizontal = false) {
   const c = document.createElement('canvas');
   c.width = 512;
-  c.height = 256;
+  c.height = Math.max(256, Math.round(c.width * (h / w)));
   const ctx = c.getContext('2d');
   ctx.clearRect(0, 0, c.width, c.height);
   if (flipHorizontal) {
@@ -341,16 +481,26 @@ function textPlane(text, w, h, fg = '#ffffff', bg = 'rgba(0, 0, 0, 0)', flipVert
   }
   if (bg !== 'rgba(0, 0, 0, 0)') {
     ctx.fillStyle = bg;
-    ctx.roundRect(54, 78, 404, 100, 28);
+    ctx.roundRect(14, 14, c.width - 28, c.height - 28, 24);
     ctx.fill();
   }
+  const lines = text.split('\n');
   ctx.fillStyle = fg;
-  ctx.font = '800 88px -apple-system, BlinkMacSystemFont, "Noto Sans KR", sans-serif';
+  ctx.font = '900 112px -apple-system, BlinkMacSystemFont, "Noto Sans KR", sans-serif';
+  const maxWidth = c.width - 52;
+  const maxHeight = c.height - 36;
+  const measuredWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
+  const fontSize = Math.min(176, Math.floor(112 * Math.min(maxWidth / measuredWidth, maxHeight / (lines.length * 118))));
+  const lineHeight = fontSize * 1.03;
+  ctx.font = `900 ${fontSize}px -apple-system, BlinkMacSystemFont, "Noto Sans KR", sans-serif`;
   ctx.shadowColor = 'rgba(0, 0, 0, 0.18)';
   ctx.shadowBlur = 8;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, c.width / 2, c.height / 2 + 2);
+  const startY = c.height / 2 - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, i) => {
+    ctx.fillText(line, c.width / 2, startY + i * lineHeight + 2);
+  });
   const texture = new THREE.CanvasTexture(c);
   texture.anisotropy = 4;
   const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
@@ -627,7 +777,7 @@ const homeLayer = new THREE.Group();
 });
 const dock = box(0.145, 0.003, 0.035, matGlass);
 dock.position.set(0, 0.098, -0.125);
-const teamTitle = textPlane('종설 4조', 0.205, 0.11, '#050505', 'rgba(255, 255, 255, 0.92)', true, true);
+const teamTitle = textPlane('종설\n4조', 0.205, 0.245, '#050505', 'rgba(255, 255, 255, 0.92)', true, true);
 teamTitle.position.set(0, 0.104, 0.002);
 homeLayer.add(teamTitle);
 g_phone.add(homeLayer);
@@ -855,6 +1005,220 @@ function applyFaceControls() {
   document.getElementById('faceRollv').textContent = roll + '°';
 }
 
+function mechanismPoseFromAngles(j2, j3) {
+  const t2 = deg(j2);
+  const t3 = deg(j3);
+  const Ey = S_y + L_arm * Math.cos(t2);
+  const Ez = S_z + L_arm * Math.sin(t2);
+  const Py = R_y + L_j3Crank * Math.cos(t3);
+  const Pz = R_z + L_j3Crank * Math.sin(t3);
+  const couplerY = -0.38;
+  const couplerRadius = Math.abs(couplerY);
+  const dY = Py - Ey;
+  const dZ = Pz - Ez;
+  const d = Math.max(0.0001, Math.hypot(dY, dZ));
+  const a = (couplerRadius * couplerRadius - L_j3Rod * L_j3Rod + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, couplerRadius * couplerRadius - a * a));
+  const uY = dY / d;
+  const uZ = dZ / d;
+  const baseY = Ey + a * uY;
+  const baseZ = Ez + a * uZ;
+  const c1Y = baseY - h * uZ;
+  const c1Z = baseZ + h * uY;
+  const c2Y = baseY + h * uZ;
+  const c2Z = baseZ - h * uY;
+  const useFirst = c1Z < c2Z;
+  const Cy = useFirst ? c1Y : c2Y;
+  const Cz = useFirst ? c1Z : c2Z;
+  const faRot = Math.atan2((Cz - Ez) / couplerY, (Cy - Ey) / couplerY);
+  const forearmAngle = Math.PI / 2 - faRot;
+  return { t2, t3, Ey, Ez, Py, Pz, Cy, Cz, faRot, forearmAngle };
+}
+
+function mechanismPotentialEnergy(j2, j3) {
+  const pose = mechanismPoseFromAngles(j2, j3);
+  const gravity = 9.80665;
+  const mass = {
+    upperArm: 0.13,
+    crankRod: 0.07,
+    forearm: 0.18,
+    wristPhone: 0.32
+  };
+  const upperY = S_y + (L_arm * 0.48) * Math.cos(pose.t2);
+  const crankRodY = (pose.Py + pose.Cy) / 2;
+  const forearmY = pose.Ey + (L_fa * 0.48) * Math.sin(pose.forearmAngle);
+  const wristPhoneY = pose.Ey + (L_fa + 0.12) * Math.sin(pose.forearmAngle);
+  return gravity * (
+    mass.upperArm * upperY +
+    mass.crankRod * crankRodY +
+    mass.forearm * forearmY +
+    mass.wristPhone * wristPhoneY
+  );
+}
+
+function estimateJointTorques(values, dt) {
+  const eps = 0.25;
+  const dRad = deg(eps * 2);
+  const staticJ2 = Math.abs((mechanismPotentialEnergy(values.j2 + eps, values.j3) - mechanismPotentialEnergy(values.j2 - eps, values.j3)) / dRad);
+  const staticJ3 = Math.abs((mechanismPotentialEnergy(values.j2, values.j3 + eps) - mechanismPotentialEnergy(values.j2, values.j3 - eps)) / dRad);
+  const previous = torquePrev;
+  const speed = {};
+  ['j1', 'j2', 'j3', 'j4', 'jg'].forEach(id => {
+    const current = values[id];
+    const lastValue = previous ? previous.values[id] : current;
+    const diff = id === 'j1' ? ((current - lastValue + 540) % 360) - 180 : current - lastValue;
+    speed[id] = Math.abs(deg(diff) / Math.max(dt, 0.016));
+  });
+  torquePrev = { values: { ...values } };
+
+  return {
+    j1: 0.025 + speed.j1 * 0.018,
+    j2: staticJ2 + speed.j2 * 0.025,
+    j3: staticJ3 + speed.j3 * 0.022,
+    j4: Math.abs(Math.sin(deg(values.j4))) * 0.05 + speed.j4 * 0.016 + 0.018,
+    jg: Math.abs(Math.sin(deg(values.jg))) * 0.13 + speed.jg * 0.018 + 0.024
+  };
+}
+
+function updateMotorTorqueGraph(values, dt) {
+  const torquesNm = estimateJointTorques(values, dt);
+  const torques = Object.fromEntries(
+    Object.entries(torquesNm).map(([id, value]) => [id, value * NM_TO_KG_CM])
+  );
+  const rect = motorChart.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  const width = Math.max(320, Math.round(rect.width * ratio));
+  const height = Math.max(220, Math.round(rect.height * ratio));
+  if (motorChart.width !== width || motorChart.height !== height) {
+    motorChart.width = width;
+    motorChart.height = height;
+  }
+  const maxPoints = 120;
+  motorGraphFrame += 1;
+  motorSpecs.forEach(spec => {
+    const value = torques[spec.id];
+    const level = clamp(value / TORQUE_GRAPH_MAX, 0, 1);
+    const history = motorHistory[spec.id];
+    history.push(value);
+    if (history.length > maxPoints) history.shift();
+    document.getElementById(spec.id + 'bar').style.setProperty('--level', level.toFixed(3));
+    document.getElementById(spec.id + 'barv').textContent = value.toFixed(2);
+  });
+
+  const ctx = motorCtx;
+  ctx.clearRect(0, 0, width, height);
+  ctx.save();
+  ctx.scale(ratio, ratio);
+  const cssW = width / ratio;
+  const cssH = height / ratio;
+  const padL = 44;
+  const padR = 16;
+  const padT = 36;
+  const padB = 30;
+  const chartW = cssW - padL - padR;
+  const chartH = cssH - padT - padB;
+  const chartMax = TORQUE_GRAPH_MAX;
+
+  ctx.fillStyle = '#26313f';
+  ctx.font = '800 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Torque Estimate', padL, 18);
+
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.32)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + chartH * (i / 4);
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(padL + chartW, y);
+    ctx.stroke();
+  }
+  for (let i = 0; i <= 8; i++) {
+    const x = padL + chartW * (i / 8);
+    ctx.beginPath();
+    ctx.moveTo(x, padT);
+    ctx.lineTo(x, padT + chartH);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#64748b';
+  ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i <= 4; i++) {
+    const label = (chartMax * (1 - i / 4)).toFixed(0);
+    ctx.fillText(label, padL - 8, padT + chartH * (i / 4));
+  }
+
+  let legendX = padL + 118;
+  motorSpecs.forEach(spec => {
+    ctx.fillStyle = spec.color;
+    ctx.fillRect(legendX, 9, 8, 8);
+    ctx.fillStyle = '#526070';
+    ctx.font = '700 10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(spec.label, legendX + 12, 17);
+    legendX += spec.label === 'Tilt' ? 48 : 36;
+  });
+
+  motorSpecs.forEach(spec => {
+    const history = motorHistory[spec.id];
+    if (history.length < 2) return;
+    ctx.beginPath();
+    let lastX = 0;
+    let lastY = 0;
+    history.forEach((torque, i) => {
+      const level = clamp(torque / chartMax, 0, 1);
+      const x = padL + chartW * ((maxPoints - history.length + i) / (maxPoints - 1));
+      const y = padT + chartH * (1 - level);
+      lastX = x;
+      lastY = y;
+      if (i === 0) ctx.moveTo(x, y);
+      else {
+        const prevTorque = history[i - 1];
+        const prevLevel = clamp(prevTorque / chartMax, 0, 1);
+        const prevX = padL + chartW * ((maxPoints - history.length + i - 1) / (maxPoints - 1));
+        const prevY = padT + chartH * (1 - prevLevel);
+        ctx.quadraticCurveTo(prevX, prevY, (prevX + x) / 2, (prevY + y) / 2);
+      }
+    });
+    ctx.lineTo(lastX, lastY);
+    ctx.strokeStyle = spec.color;
+    ctx.lineWidth = spec.id === 'j2' || spec.id === 'j3' ? 2.2 : 1.7;
+    ctx.stroke();
+    ctx.fillStyle = spec.color;
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  const pulseX = padL + chartW - ((motorGraphFrame % 30) / 30) * 18;
+  ctx.strokeStyle = 'rgba(100, 116, 139, 0.22)';
+  ctx.beginPath();
+  ctx.moveTo(pulseX, padT);
+  ctx.lineTo(pulseX, padT + chartH);
+  ctx.stroke();
+
+  ctx.fillStyle = '#475569';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = '800 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.fillText('TORQUE kg.cm', padL, cssH - 8);
+  ctx.restore();
+}
+
+function getMotorInputValues() {
+  return {
+    j1: +document.getElementById('j1').value,
+    j2: +document.getElementById('j2').value,
+    j3: +document.getElementById('j3').value,
+    j4: +document.getElementById('j4').value,
+    jg: +document.getElementById('jg').value
+  };
+}
+
 function readSliders() {
   const a1 = +document.getElementById('j1').value;
   const a2 = +document.getElementById('j2').value;
@@ -964,6 +1328,45 @@ function getViewerPresentationPose() {
   applyAngles(currentPose.j1, currentPose.j2, currentPose.j3, currentPose.j4, currentPose.jg);
   return best;
 }
+
+const autoDemoPath = [
+  { t: 0.0,  pose: { j1: 0,   j2: 25, j3: 260, j4: 0,   jg: 0 } },
+  { t: 1.2,  pose: { j1: 0,   j2: 36, j3: 285, j4: 0,   jg: -8 } },
+  { t: 3.0,  pose: { j1: 52,  j2: 50, j3: 306, j4: -28, jg: -16 } },
+  { t: 4.2,  pose: { j1: 82,  j2: 22, j3: 248, j4: -42, jg: 10 } },
+  { t: 6.2,  pose: { j1: 168, j2: 34, j3: 292, j4: 24,  jg: -12 } },
+  { t: 7.4,  pose: { j1: 212, j2: 56, j3: 318, j4: 44,  jg: -22 } },
+  { t: 9.4,  pose: { j1: 305, j2: 42, j3: 288, j4: -18, jg: 12 } },
+  { t: 11.2, pose: { j1: 360, j2: 25, j3: 260, j4: 0,   jg: 0 } }
+];
+const autoDemoDuration = autoDemoPath[autoDemoPath.length - 1].t;
+
+function lerpAngle360(a, b, t) {
+  const diff = ((b - a + 540) % 360) - 180;
+  return ((a + diff * t) % 360 + 360) % 360;
+}
+
+function interpolateAutoDemoPose(time) {
+  const t = time % autoDemoDuration;
+  let a = autoDemoPath[0];
+  let b = autoDemoPath[autoDemoPath.length - 1];
+  for (let i = 0; i < autoDemoPath.length - 1; i++) {
+    if (t >= autoDemoPath[i].t && t <= autoDemoPath[i + 1].t) {
+      a = autoDemoPath[i];
+      b = autoDemoPath[i + 1];
+      break;
+    }
+  }
+  const p = easeInOut((t - a.t) / Math.max(0.001, b.t - a.t));
+  return {
+    j1: lerpAngle360(a.pose.j1, b.pose.j1, p),
+    j2: a.pose.j2 + (b.pose.j2 - a.pose.j2) * p,
+    j3: a.pose.j3 + (b.pose.j3 - a.pose.j3) * p,
+    j4: a.pose.j4 + (b.pose.j4 - a.pose.j4) * p,
+    jg: a.pose.jg + (b.pose.jg - a.pose.jg) * p
+  };
+}
+
 let mode = 'idle', animT = 0, personOrbit = false, personOrbitTime = 0, personOrbitBooted = false;
 let personOrbitPresentingToViewer = false;
 document.getElementById('btnReset').addEventListener('click', () => {
@@ -973,6 +1376,7 @@ document.getElementById('btnReset').addEventListener('click', () => {
   personOrbitBooted = false;
   personOrbitPresentingToViewer = false;
   document.getElementById('btnAnim').textContent = '자동 데모 ▶';
+  document.getElementById('btnAnim').classList.remove('active');
   document.getElementById('btnPersonOrbit').textContent = '사람 궤도 데모 ▶';
   document.getElementById('btnPersonOrbit').classList.remove('active');
   document.getElementById('j1').value = 0;
@@ -995,13 +1399,25 @@ document.getElementById('btnAnim').addEventListener('click', () => {
   if (mode === 'auto') {
     mode = 'idle';
     document.getElementById('btnAnim').textContent = '자동 데모 ▶';
+    document.getElementById('btnAnim').classList.remove('active');
   } else {
     mode = 'auto';
     animT = 0;
+    personOrbit = false;
+    personOrbitTime = 0;
+    personOrbitBooted = false;
+    personOrbitPresentingToViewer = false;
+    document.getElementById('btnPersonOrbit').textContent = '사람 궤도 데모 ▶';
+    document.getElementById('btnPersonOrbit').classList.remove('active');
+    setAutoFaceTrack(false);
     document.getElementById('btnAnim').textContent = '정지 ■';
+    document.getElementById('btnAnim').classList.add('active');
   }
 });
 document.getElementById('btnPersonOrbit').addEventListener('click', () => {
+  mode = 'idle';
+  document.getElementById('btnAnim').textContent = '자동 데모 ▶';
+  document.getElementById('btnAnim').classList.remove('active');
   personOrbit = !personOrbit;
   personOrbitTime = 0;
   personOrbitBooted = false;
@@ -1089,26 +1505,23 @@ function render() {
   } else if (autoFaceTrack && faceTarget.visible && !holdingPersonOrbitStart) {
     stepFaceTracking(dt);
   } else if (mode === 'auto') {
-    animT += dt * 0.7;
-    const a1 = Math.round((animT * 80) % 360);
-    const a2 = Math.round(25 + Math.sin(animT) * 30);
-    const a3 = Math.round(285 + Math.sin(animT * 1.1) * 45);
-    const a4 = Math.round((Math.sin(animT * 1.1) * 0.5 + 0.5) * 90);
-    const gr = Math.round(Math.sin(animT * 1.8) * 25);
-    document.getElementById('j1').value = a1;
-    document.getElementById('j2').value = a2;
-    document.getElementById('j3').value = a3;
-    document.getElementById('j4').value = a4;
-    document.getElementById('jg').value = gr;
+    animT += dt;
+    const pose = interpolateAutoDemoPose(animT);
+    document.getElementById('j1').value = Math.round(pose.j1);
+    document.getElementById('j2').value = Math.round(pose.j2);
+    document.getElementById('j3').value = Math.round(pose.j3);
+    document.getElementById('j4').value = Math.round(pose.j4);
+    document.getElementById('jg').value = Math.round(pose.jg);
     readSliders();
   }
+  updateMotorTorqueGraph(getMotorInputValues(), dt);
   
   renderer.render(scene, camera);
 }
 
-setPhoneState('off');
+setPhoneState('home');
 applyFaceControls();
-applyAngles(0, 25, 260, 0, 0);
+readSliders();
 updateCam();
 render();
 </script>
