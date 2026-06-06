@@ -5,7 +5,7 @@
 const char* ssid = "SUNJAE";
 const char* password = "jh9989jh@@";
 
-IPAddress local_IP(192, 168, 252, 39);
+IPAddress local_IP(192, 168, 252, 38);
 IPAddress gateway(192, 168, 252, 1);
 IPAddress subnet(255, 255, 255, 0);
 
@@ -22,25 +22,25 @@ Servo servo5;
 const int servoPin1 = 25;
 const int servoPin2 = 33;
 const int servoPin3 = 27;
-const int servoPin4 = 26;
+const int servoPin4 = 22;
 const int servoPin5 = 32;
 
-float servoAngle1 = 90.0;
-float servoAngle2 = 90.0;
-float servoAngle3 = 90.0;
-float servoAngle4 = 90.0;
-float servoAngle5 = 90.0;
+int servoAngle1 = 90;
+int servoAngle2 = 90;
+int servoAngle3 = 90;
+int servoAngle4 = 90;
+int servoAngle5 = 90;
 
 const int SERVO_MIN_ANGLE = 0;
 const int SERVO_MAX_ANGLE = 180;
 
 void handleSet();
 
-void setServo1Angle(float angle);
-void setServo2Angle(float angle);
-void setServo3Angle(float angle);
-void setServo4Angle(float angle);
-void setServo5Angle(float angle);   
+void setServo1Angle(int angle);
+void setServo2Angle(int angle);
+void setServo3Angle(int angle);
+void setServo4Angle(int angle);
+void setServo5Angle(int angle);   
 
 void setServo1ByRoll(float roll);
 void setServo2ByPitch(float pitch);
@@ -64,11 +64,11 @@ void setup() {
   servo4.attach(servoPin4, 500, 2400);
   servo5.attach(servoPin5, 500, 2400);
 
-  servo1.write((int)round(servoAngle1));
-  servo2.write((int)round(servoAngle2));
-  servo3.write((int)round(servoAngle3));
-  servo4.write((int)round(servoAngle4));
-  servo5.write((int)round(servoAngle5));
+  servo1.write(servoAngle1);
+  servo2.write(servoAngle2);
+  servo3.write(servoAngle3);
+  servo4.write(servoAngle4);
+  servo5.write(servoAngle5);
 
   WiFi.begin(ssid, password);
 
@@ -95,37 +95,37 @@ void loop() {
   server.handleClient();
 }
 
-void setServo1Angle(float angle) {
+void setServo1Angle(int angle) {
   servoAngle1 = constrain(angle, SERVO_MIN_ANGLE, SERVO_MAX_ANGLE);
-  servo1.write((int)round(servoAngle1));
+  servo1.write(servoAngle1);
   Serial.print("servo1 angle: ");
   Serial.println(servoAngle1);
 }
 
-void setServo2Angle(float angle) {
+void setServo2Angle(int angle) {
   servoAngle2 = constrain(angle, SERVO_MIN_ANGLE, SERVO_MAX_ANGLE);
-  servo2.write((int)round(servoAngle2));
+  servo2.write(servoAngle2);
   Serial.print("servo2 angle: ");
   Serial.println(servoAngle2);
 }
 
-void setServo3Angle(float angle) {
+void setServo3Angle(int angle) {
   servoAngle3 = constrain(angle, SERVO_MIN_ANGLE, SERVO_MAX_ANGLE);
-  servo3.write((int)round(servoAngle3));
+  servo3.write(servoAngle3);
   Serial.print("servo3 angle: ");
   Serial.println(servoAngle3);
 }
 
-void setServo4Angle(float angle) {
+void setServo4Angle(int angle) {
   servoAngle4 = constrain(angle, SERVO_MIN_ANGLE, SERVO_MAX_ANGLE);
-  servo4.write((int)round(servoAngle4));
+  servo4.write(servoAngle4);
   Serial.print("servo4 angle: ");
   Serial.println(servoAngle4);
 }
 
-void setServo5Angle(float angle) {
+void setServo5Angle(int angle) {
   servoAngle5 = constrain(angle, SERVO_MIN_ANGLE, SERVO_MAX_ANGLE);
-  servo5.write((int)round(servoAngle5));
+  servo5.write(servoAngle5);
   Serial.print("servo5 angle: ");
   Serial.println(servoAngle5);
 }
@@ -144,7 +144,7 @@ void setServo1ByRoll(float roll) {
   Serial.print(rollValue);
   Serial.print(" angleDelta: ");
   Serial.println(angleDelta);
-
+  angleDelta = constrain(angleDelta, -0.00000001, 0);
 
   // roll을 줄이는 방향으로 보정
   setServo1Angle(servoAngle1 + angleDelta);
@@ -166,17 +166,17 @@ void setServo2ByPitch(float pitch) {
 
 
 void setServo3ByLeft(float left) {
-  float leftValue = constrain(left, -300, 300);
+  float leftValue = constrain(left, -10, 10);
   if (abs(leftValue) <= 0.1) {
     return;
   }
 
-  float Kp_left = 0.1;
+  float Kp_left = 1;
 
   int angleDelta = (int)round(leftValue * Kp_left);
 
   // 방향이 반대면 +를 -로 바꾸면 됨
-  setServo3Angle(servoAngle3 - angleDelta);
+  setServo3Angle(servoAngle3 + angleDelta);
 }
 
 void setServo5ByX(float x) {
@@ -184,11 +184,11 @@ void setServo5ByX(float x) {
   float xValue = constrain(x, -225.0, 225.0);
 
   // x가 거의 0이면 움직이지 않음
-  if (abs(xValue) <= 20.0) {
+  if (abs(xValue) <= 5.0) {
     return;
   }
 
-  float Kp_x = 0.1;
+  float Kp_x = 0.2;
 
   int angleDelta = (int)round(Kp_x * xValue);
 
@@ -198,7 +198,7 @@ void setServo5ByX(float x) {
   Serial.print(xValue);
   Serial.print(" x angleDelta: ");
   Serial.println(angleDelta);
-
+  angleDelta = constrain(angleDelta, -0.0000000001, 0);
 
   // x를 0으로 줄이는 방향으로 보정
   setServo5Angle(servoAngle5 - angleDelta);
@@ -220,20 +220,24 @@ void handleSet() {
   Serial.println(messageCount);
   Serial.printf("#%d | x=%s y=%s yaw=%s pitch=%s roll=%s command=%s\n", messageCount, x.c_str(), y.c_str(), yaw.c_str(), pitch.c_str(), roll.c_str(), command.c_str());
 
-  if (roll.length() > 0) {
-    setServo1ByRoll(roll.toFloat());
-  }
+  // if (roll.length() > 0) {
+  //   setServo1ByRoll(roll.toFloat());
+  // }
+
+  // if (pitch.length() > 0) {
+  //   setServo2ByPitch(pitch.toFloat());
+  // }
 
   // if (pitch.length() > 0) {
   //   setServo2ByPitch(pitch.toFloat());
   // }
 
   if (y.length() > 0) {
-     setServo3ByLeft(y.toFloat());
+    setServo3ByLeft(y.toFloat());
   }
 
-  if (x.length() > 0) {
-  setServo5ByX(x.toFloat());
-	}
+  // if (x.length() > 0) {
+  // setServo5ByX(x.toFloat());
+	// }
   server.send(200, "text/plain", "OK");
 }

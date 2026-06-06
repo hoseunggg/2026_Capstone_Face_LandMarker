@@ -5,8 +5,8 @@
 const char* ssid = "SUNJAE";
 const char* password = "jh9989jh@@";
 
-IPAddress local_IP(192, 168, 173, 55);
-IPAddress gateway(192, 168, 173, 1);
+IPAddress local_IP(192, 168, 252, 38);
+IPAddress gateway(192, 168, 252, 1);
 IPAddress subnet(255, 255, 255, 0);
 
 WebServer server(80);
@@ -149,6 +149,52 @@ void setServo1ByYaw(float yaw) {
     lookCenter();
   }
 }
+
+
+void handleSet() {
+  messageCount++;
+
+  String x = server.arg("x");
+  String y = server.arg("y");
+  String yaw = server.arg("yaw");
+  String pitch = server.arg("pitch");
+  String roll = server.arg("roll");
+  String command = server.arg("command");
+
+  Serial.println();
+  Serial.println("================================");
+  Serial.print("MESSAGE #");
+  Serial.println(messageCount);
+  Serial.printf("#%d | x=%s y=%s yaw=%s pitch=%s roll=%s command=%s\n", messageCount, x.c_str(), y.c_str(), yaw.c_str(), pitch.c_str(), roll.c_str(), command.c_str());
+
+  if (command.length() > 0) {
+    applyCommand(command);
+  }
+
+  if (yaw.length() > 0) {
+
+    setServo1ByYaw(yaw.toFloat());
+  }
+
+  // if (server.arg("servo1").length() > 0) {
+  //   setServo1Angle(server.arg("servo1").toInt());
+  // }
+
+  // if (server.arg("servo2").length() > 0) {
+  //   setServo2Angle(server.arg("servo2").toInt());
+  // }
+
+  // if (server.arg("servo3").length() > 0) {
+  //   setServo3Angle(server.arg("servo3").toInt());
+  // }
+
+  // if (server.arg("servo4").length() > 0) {
+  //   setServo4Angle(server.arg("servo4").toInt());
+  // }
+
+  server.send(200, "text/plain", "OK");
+}
+
 
 
 void handleSet() {
